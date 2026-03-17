@@ -19,6 +19,7 @@ import queue
 
 from qtutils.qt.QtCore import Qt, QSize
 from qtutils.qt.QtGui import QIcon
+from qtutils.qt.QtWidgets import QSizePolicy
 
 from qtutils import inmain_decorator, UiLoader
 from zprocess import TimeoutError, raise_exception_in_thread
