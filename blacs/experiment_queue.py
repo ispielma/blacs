@@ -143,28 +143,26 @@ class QueueManager(object):
         self.current_shot_source_kind = None
         self.last_completed_shot = None
         self.last_completed_shot_ignore_repeat = False
+        self._local_override_path = None
+        self._updating_local_override_text = False
 
         self._logger = logging.getLogger('BLACS.ShotExecutor')
         self._runmanager_client = None
         self._runmanager_comm_error_logged = False
 
-        self._model = QStandardItemModel()
-        self._create_headers()
-        self._ui.treeview.setModel(self._model)
-        self._ui.treeview.add_to_queue = self.process_request
-        self._ui.treeview.delete_selection = self._delete_selected_items
-
         self._ui.queue_pause_button.toggled.connect(self._toggle_pause)
         self._ui.queue_repeat_button.toggled.connect(self._toggle_repeat)
-        self._ui.queue_delete_button.clicked.connect(self._delete_selected_items)
-        self._ui.queue_clear_button.clicked.connect(self._toggle_clear)
         self._ui.actionAdd_to_queue.triggered.connect(self.on_add_shots_triggered)
-        self._ui.queue_add_button.setDefaultAction(self._ui.actionAdd_to_queue)
+        self._ui.local_override_browse_button.setDefaultAction(
+            self._ui.actionAdd_to_queue
+        )
+        self._ui.local_override_lineEdit.editingFinished.connect(
+            self._on_local_override_editing_finished
+        )
+        self._ui.local_override_lineEdit.textChanged.connect(
+            self._on_local_override_text_changed
+        )
 
-        self._ui.queue_push_up.setEnabled(False)
-        self._ui.queue_push_down.setEnabled(False)
-        self._ui.queue_push_to_top.setEnabled(False)
-        self._ui.queue_push_to_bottom.setEnabled(False)
         self._ui.repeat_mode_select_button.setEnabled(False)
         self._ui.repeat_mode_select_button.hide()
         self._ui.queue_repeat_button.setToolTip(
@@ -180,16 +178,11 @@ class QueueManager(object):
             Qt.ElideLeft,
         )
         self.manager_repeat_mode = self.REPEAT_LAST
-        self._update_local_override_buttons()
+        self._sync_local_override_widgets()
 
         self.manager = threading.Thread(target=self.manage)
         self.manager.daemon = True
         self.manager.start()
-
-    def _create_headers(self):
-        self._model.setHorizontalHeaderItem(
-            FILEPATH_COLUMN, QStandardItem('Local override shot')
-        )
 
     def get_save_data(self):
         return {
@@ -197,6 +190,7 @@ class QueueManager(object):
             'manager_repeat': self.manager_repeat,
             'manager_repeat_mode': self.manager_repeat_mode,
             'last_opened_shots_folder': self.last_opened_shots_folder,
+            'local_override_path': self.get_local_override(),
         }
 
     def restore_save_data(self, data):
@@ -208,6 +202,8 @@ class QueueManager(object):
             self.manager_repeat_mode = data['manager_repeat_mode']
         if 'last_opened_shots_folder' in data:
             self.last_opened_shots_folder = data['last_opened_shots_folder']
+        if 'local_override_path' in data and data['local_override_path']:
+            self.process_request(str(data['local_override_path']))
 
         legacy_files = list(data.get('files_queued', []))
         if legacy_files:
@@ -228,9 +224,6 @@ class QueueManager(object):
 
     def _toggle_pause(self, checked):
         self.manager_paused = checked
-
-    def _toggle_clear(self):
-        self.clear_local_override()
 
     @property
     @inmain_decorator(True)
@@ -274,6 +267,27 @@ class QueueManager(object):
         self._manager_repeat_mode = self.REPEAT_LAST
         self._ui.queue_repeat_button.setIcon(QIcon(self.ICON_REPEAT_LAST))
 
+    def _on_local_override_text_changed(self, text):
+        if self._updating_local_override_text:
+            return
+        text = str(text).strip()
+        self._ui.local_override_lineEdit.setToolTip(text)
+        if not text:
+            self._local_override_path = None
+
+    def _on_local_override_editing_finished(self):
+        text = str(self._ui.local_override_lineEdit.text()).strip()
+        if not text:
+            self.clear_local_override()
+            return
+        current_override = self.get_local_override()
+        if text == current_override:
+            return
+        message = self.process_request(text)
+        if not message.startswith('Local override shot loaded successfully'):
+            QMessageBox.warning(self._ui, 'BLACS', message)
+            self._sync_local_override_widgets()
+
     def on_add_shots_triggered(self):
         shot_file = QFileDialog.getOpenFileName(
             self._ui,
@@ -292,42 +306,40 @@ class QueueManager(object):
         self.process_request(shot_file)
 
     def _delete_selected_items(self):
-        if self._ui.treeview.selectedIndexes():
-            self.clear_local_override()
-
-    @inmain_decorator(True)
-    def _update_local_override_buttons(self):
-        has_override = self._model.rowCount() > 0
-        self._ui.queue_delete_button.setEnabled(has_override)
-        self._ui.queue_clear_button.setEnabled(has_override)
+        self.clear_local_override()
 
     @inmain_decorator(True)
     def clear_local_override(self):
-        self._model.clear()
-        self._create_headers()
-        self._update_local_override_buttons()
+        self._local_override_path = None
+        self._sync_local_override_widgets()
 
     @inmain_decorator(True)
     def _set_local_override(self, h5_filepath):
-        self._model.clear()
-        self._create_headers()
-        item = QStandardItem(h5_filepath)
-        item.setToolTip(h5_filepath)
-        self._model.appendRow(item)
-        self._update_local_override_buttons()
+        self._local_override_path = str(h5_filepath)
+        self._sync_local_override_widgets()
+
+    @inmain_decorator(True)
+    def _sync_local_override_widgets(self):
+        text = self._local_override_path or ''
+        self._updating_local_override_text = True
+        try:
+            if self._ui.local_override_lineEdit.text() != text:
+                self._ui.local_override_lineEdit.setText(text)
+            self._ui.local_override_lineEdit.setToolTip(text)
+        finally:
+            self._updating_local_override_text = False
 
     @inmain_decorator(True)
     def get_local_override(self):
-        if self._model.rowCount() == 0:
-            return None
-        return str(self._model.item(0, FILEPATH_COLUMN).text())
+        return self._local_override_path
 
     @inmain_decorator(True)
     def _pop_local_override(self):
-        if self._model.rowCount() == 0:
+        if self._local_override_path is None:
             return None
-        path = str(self._model.takeRow(0)[0].text())
-        self._update_local_override_buttons()
+        path = self._local_override_path
+        self._local_override_path = None
+        self._sync_local_override_widgets()
         return path
 
     @inmain_decorator(True)

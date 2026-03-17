@@ -39,7 +39,7 @@ class AnalysisSubmission(object):
         
         self._ui = UiLoader().load(os.path.join(BLACS_DIR, 'analysis_submission.ui'))
         blacs_ui.analysis.addWidget(self._ui)
-        self._ui.frame.setMinimumWidth(blacs_ui.queue_controls_frame.sizeHint().width())
+        self._ui.frame.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
         elide_label(self._ui.resend_shots_label, self._ui.failed_to_send_frame.layout(), Qt.ElideRight)
         # connect signals
         self._ui.send_to_server.toggled.connect(lambda state: self._set_send_to_server(state))
