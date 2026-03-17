@@ -13,11 +13,10 @@
 import os
 import shutil
 
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtCore import Qt, QTimer
+from qtutils.qt.QtWidgets import QDialog
 
-from qtutils import *
+from qtutils import inmain_decorator, UiLoader
 import runmanager
 from labscript_utils.qtwidgets.outputbox import OutputBox
 

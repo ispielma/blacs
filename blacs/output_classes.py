@@ -14,9 +14,15 @@ import logging
 import math
 import sys
 
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtCore import Qt
+from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
+from qtutils.qt.QtWidgets import (
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QSpacerItem,
+    QSizePolicy,
+)
 
 
 from labscript_utils.qtwidgets.analogoutput import AnalogOutput

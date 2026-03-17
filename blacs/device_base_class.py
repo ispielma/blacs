@@ -16,9 +16,17 @@ import os
 import time
 from queue import Queue
 
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtCore import QTimer
+from qtutils.qt.QtGui import QIcon
+from qtutils.qt.QtWidgets import (
+    QWidget,
+    QSpacerItem,
+    QSizePolicy,
+    QPushButton,
+    QHBoxLayout,
+    QApplication,
+    QVBoxLayout,
+)
 
 import labscript_utils.excepthook
 from qtutils import UiLoader
@@ -339,7 +347,7 @@ class DeviceTab(Tab):
         for arg in args:
             # A default sort algorithm that just returns the object (this is equivalent to not specifying the sort gorithm)
             sort_algorithm = lambda x: x
-            if type(arg) == type(()) and len(arg) > 1 and type(arg[1]) == type({}) and len(arg[1].keys()) > 0:
+            if isinstance(arg, tuple) and len(arg) > 1 and isinstance(arg[1], dict) and len(arg[1].keys()) > 0:
                 # we have a name, use it!
                 name = arg[0]
                 widget_dict = arg[1]
@@ -347,7 +355,7 @@ class DeviceTab(Tab):
                     sort_algorithm = arg[2]
             else:
                 # ignore things that are not dictionaries or empty dictionaries
-                if type(arg) != type({}) or len(arg.keys()) < 1:
+                if not isinstance(arg, dict) or len(arg.keys()) < 1:
                     continue
                 if isinstance(self.get_channel(list(arg.keys())[0]),AO):
                     name = 'Analog Outputs'
@@ -472,7 +480,7 @@ class DeviceTab(Tab):
         
         # If no results were returned, raise an exception so that we don't keep calling this function over and over again, 
         # filling up the text box with the same error, eventually consuming all CPU/memory of the PC
-        if not self._last_remote_values or type(self._last_remote_values) != type({}):
+        if not self._last_remote_values or not isinstance(self._last_programmed_values, dict):
             raise Exception('Failed to get remote values from device. Is it still connected?')
             
         # A variable to indicate if any of the channels have a changed value

@@ -13,14 +13,12 @@
 import os
 import logging
 
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtWidgets import QMessageBox
 
 import labscript_utils.excepthook
 import numpy
 import labscript_utils.h5_lock, h5py
-from qtutils import *
+from qtutils import inmain_decorator
 
 from labscript_utils.connections import ConnectionTable
 
@@ -137,7 +135,7 @@ class FrontPanelSettings(object):
         #    This is because we have the original channel, and the moved channel in the same place
         #-1: Device no longer in the connection table, throw error
         #-2: Device parameters not compatible, throw error
-        if type(result) == tuple:
+        if isinstance(result, tuple):
             connection = result[1]
             result = result[0]
 
@@ -285,7 +283,7 @@ class FrontPanelSettings(object):
 
             if save_conn_table or result:
                 with h5py.File(current_file,'r+') as hdf5_file:
-                    if hdf5_file['/'].get('front_panel') != None:
+                    if hdf5_file['/'].get('front_panel') is not None:
                         # Create a dialog to ask whether we can overwrite!
                         overwrite = False
                         if not silent:

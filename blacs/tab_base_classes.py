@@ -24,11 +24,11 @@ import os
 from types import GeneratorType
 from bisect import insort
 
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtCore import Qt, QTimer
+from qtutils.qt.QtGui import QIcon, QColor
+from qtutils.qt.QtWidgets import QLabel, QWidget, QPushButton, QApplication, QVBoxLayout
 
-from qtutils import *
+from qtutils import inmain_decorator, inmain, inthread, UiLoader
 from labscript_utils.qtwidgets.outputbox import OutputBox
 import qtutils.icons
 
@@ -782,7 +782,7 @@ class Tab(object):
                 # run the function in the Qt main thread
                 generator = inmain(func,self,*args,**kwargs)
                 # Do any work that was queued up:(we only talk to the worker if work has been queued up through the yield command)
-                if type(generator) == GeneratorType:
+                if isinstance(generator, GeneratorType):
                     # We need to call next recursively, queue up work and send the results back until we get a StopIteration exception
                     generator_running = True
                     # get the data from the first yield function
@@ -1087,7 +1087,7 @@ class MyTab(Tab):
     # appearance settings). You should never be calling queue_work
     # or do_after from un undecorated callback.
     @define_state(MODE_MANUAL,True)  
-    def foo(self):
+    def foo(self,button=None):
         self.logger.debug('entered foo')
         #self.toplevel.set_sensitive(False)
         # Here's how you instruct the worker process to do
@@ -1113,7 +1113,7 @@ class MyTab(Tab):
         self.queue_work('My worker','foo', 5,6,7,x='x')
         
     @define_state(MODE_MANUAL,True)  
-    def bar(self):
+    def bar(self,button):
         self.logger.debug('entered bar')
         results = yield(self.queue_work('My worker','bar', 5,6,7,x=5))
       
@@ -1134,7 +1134,7 @@ class MyTab(Tab):
     # This event shows what happens if you try to send a unpickleable
     # event through a queue to the subprocess:
     @define_state(MODE_MANUAL,True)  
-    def baz_unpickleable(self):
+    def baz_unpickleable(self, button):
         self.logger.debug('entered baz_unpickleable')
         results = yield(self.queue_work('My worker','baz', 5,6,7,x=threading.Lock()))
         self.logger.debug('leaving baz_unpickleable')
@@ -1167,7 +1167,10 @@ class MyWorker(Worker):
         # the former.
         global serial; import serial
         self.logger.info('got x! %d' % self.x)
-        raise Exception('bad import!')
+        # randomly fail this on init, but only occasionally
+        import random
+        if random.random() < 0.15:
+            raise Exception('bad import!')
         
     # Here's a function that will be called when requested by the parent
     # process. There's nothing special about it really. Its return
@@ -1195,6 +1198,8 @@ if __name__ == '__main__':
     import sys
     import logging.handlers
     # Setup logging:
+    from labscript_utils.setup_logging import setup_logging
+    setup_logging('BLACS')
     logger = logging.getLogger('BLACS')
     handler = logging.handlers.RotatingFileHandler(os.path.join(BLACS_DIR, 'BLACS.log'), maxBytes=1024**2, backupCount=0)
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -1222,6 +1227,7 @@ if __name__ == '__main__':
     class FakeConnection(object):
         def __init__(self):
             self.BLACS_connection = 'None'
+            self.properties = {}
     class FakeConnectionTable(object):
         def __init__(self):
             pass

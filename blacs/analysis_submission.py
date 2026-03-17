@@ -17,11 +17,10 @@ import time
 import sys
 import queue
 
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtCore import Qt, QSize
+from qtutils.qt.QtGui import QIcon
 
-from qtutils import *
+from qtutils import inmain_decorator, UiLoader
 from zprocess import TimeoutError, raise_exception_in_thread
 from zprocess.security import AuthenticationFailure
 from labscript_utils.ls_zprocess import zmq_get

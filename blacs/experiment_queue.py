@@ -22,18 +22,24 @@ from binascii import hexlify
 from collections import defaultdict
 from tempfile import gettempdir
 
-from qtutils import *
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtCore import Qt, QItemSelectionModel
+from qtutils.qt.QtGui import QIcon
+from qtutils.qt.QtWidgets import (
+    QFileDialog,
+    QMessageBox,
+    QTreeView,
+)
 
 import zprocess
-from labscript_utils.connections import ConnectionTable
-import labscript_utils.h5_lock
-import h5py
 from labscript_utils.ls_zprocess import ProcessTree
-import labscript_utils.properties
+process_tree = ProcessTree.instance()
+import labscript_utils.h5_lock, h5py
+
+from qtutils import inmain_decorator, inmain
+
 from labscript_utils.qtwidgets.elide_label import elide_label
+from labscript_utils.connections import ConnectionTable
+import labscript_utils.properties
 from labscript_utils.shared_drive import path_to_agnostic, path_to_local
 
 from blacs.tab_base_classes import (
@@ -970,7 +976,8 @@ class QueueManager(object):
                         save_queue_data=False,
                     )
 
-                    data_group = hdf5_file['/'].create_group('data')
+                    data_group = hdf5_file['/'].require_group('data')
+                    # stamp with the run time of the experiment
                     hdf5_file.attrs['run time'] = run_time.strftime('%Y%m%dT%H%M%S.%f')
 
                 error_condition = False

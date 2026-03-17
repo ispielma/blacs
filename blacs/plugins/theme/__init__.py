@@ -13,7 +13,7 @@
 import logging
 import os
 
-from qtutils import *
+from qtutils import UiLoader
 
 from blacs.plugins import PLUGINS_DIR
 

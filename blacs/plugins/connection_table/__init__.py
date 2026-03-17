@@ -16,13 +16,13 @@ import subprocess
 import sys
 import ast
 
-from qtutils.qt.QtCore import *
-from qtutils.qt.QtGui import *
-from qtutils.qt.QtWidgets import *
+from qtutils.qt.QtCore import Qt
+from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
+from qtutils.qt.QtWidgets import QMessageBox, QFileDialog
 
 from blacs.compile_and_restart import CompileAndRestart
 from labscript_utils.filewatcher import FileWatcher
-from qtutils import *
+from qtutils import inmain, UiLoader
 from blacs.plugins import PLUGINS_DIR
 
 FILEPATH_COLUMN = 0
