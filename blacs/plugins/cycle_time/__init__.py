@@ -47,7 +47,7 @@ class Plugin(object):
 
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
-        self.queue_manager = self.BLACS['experiment_queue']
+        self.executor = self.BLACS['experiment_queue']
 
     def get_save_data(self):
         return {}
@@ -96,12 +96,12 @@ class Plugin(object):
             deadline = self.time_of_last_shot + self.target_cycle_time
             inmain(self.BLACS['ui'].queue_abort_button.clicked.connect, self._abort)
             # Store the current queue manager status, to restore it after we are done:
-            previous_status = self.queue_manager.get_status()
+            previous_status = self.executor.get_status()
             while True:
                 remaining = deadline - monotonic()
                 if remaining <= 0:
                     break
-                self.queue_manager.set_status(
+                self.executor.set_status(
                     'Waiting {:.1f}s for target cycle time'.format(remaining),
                     h5_filepath,
                 )
@@ -113,7 +113,7 @@ class Plugin(object):
             # Disconnect from the abort button:
             inmain(self.BLACS['ui'].queue_abort_button.clicked.disconnect, self._abort)
             # Restore previous_status:
-            self.queue_manager.set_status(previous_status, h5_filepath)
+            self.executor.set_status(previous_status, h5_filepath)
 
         self.time_of_last_shot = monotonic()
 

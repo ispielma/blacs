@@ -12,9 +12,7 @@
 #####################################################################
 import logging
 import os
-import subprocess
 import threading
-import sys
 from queue import Queue
 
 from qtutils import UiLoader
@@ -93,19 +91,18 @@ class Plugin(object):
         if self.n_shots_to_keep == KEEP_ALL_SHOTS:
             return
 
-        # Is the file a repeated shot?
-        basename, ext = os.path.splitext(os.path.basename(h5_filepath))
-        if '_rep' in basename and ext == '.h5':
-            repno = basename.split('_rep')[-1]
-            try:
-                int(repno)
-            except ValueError:
-                # not a rep:
-                return
-            else:
-                # Yes, it is a rep. Queue it for deletion:
-                self.delete_queue.append(h5_filepath)
-                self.event_queue.put('shot complete')
+        try:
+            import labscript_utils.h5_lock
+            import h5py
+            with h5py.File(h5_filepath, 'r') as h5_file:
+                repeat_number = int(h5_file.attrs.get('run repeat', 0))
+        except Exception:
+            logger.exception("Couldn't inspect shot repeat metadata for %s", h5_filepath)
+            return
+
+        if repeat_number > 0:
+            self.delete_queue.append(h5_filepath)
+            self.event_queue.put('shot complete')
 
     def mainloop(self):
         # We delete shots in a separate thread so that we don't slow down the queue waiting on
