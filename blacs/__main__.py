@@ -22,7 +22,7 @@ desktop_app.set_process_appid('blacs')
 
 
 # Splash screen
-from labscript_utils.splash import Splash
+from labscript_utils.splash import Splash, get_qapplication
 splash = Splash(os.path.join(os.path.dirname(__file__), 'blacs.svg'))
 splash.show()
 
@@ -44,7 +44,6 @@ from qtutils.qt.QtWidgets import (
     QToolButton,
     QMessageBox,
     QFileDialog,
-    QApplication
 )
 from qtutils.qt import QT_ENV
 
@@ -760,10 +759,7 @@ if __name__ == '__main__':
     logger.info('connection table loaded')
 
     splash.update_text('initialising Qt application')
-    qapplication = QApplication.instance()
-    if qapplication is None:
-        qapplication = QApplication(sys.argv)
-    qapplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
+    qapplication = get_qapplication()
     logger.info('QApplication instantiated')
     app = BLACS(qapplication)
 
