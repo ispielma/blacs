@@ -94,6 +94,7 @@ class FrontPanelSettings(object):
 
                 #now get dataset attributes
                 tab_data['BLACS settings'] = dict(dataset.attrs)
+                tab_data['BLACS settings'].pop('analysis_data', None)
 
                 # Get the front panel values
                 if 'front_panel' in hdf5_file["/front_panel"]:
@@ -243,7 +244,6 @@ class FrontPanelSettings(object):
                                        "maximized":self.window.isMaximized(),
                                        "frame_height":abs(self.window.frameGeometry().height()-self.window.normalGeometry().height()),
                                        "frame_width":abs(self.window.frameGeometry().width()-self.window.normalGeometry().width()),
-                                       "_analysis":self.blacs.analysis_submission.get_save_data(),
                                        "_queue":self.blacs.queue.get_save_data(),
                                       }
         # Pane positions
@@ -399,14 +399,8 @@ class FrontPanelSettings(object):
         dataset.attrs["window_frame_height"] = window_data["_main_window"]["frame_height"]
         dataset.attrs["window_frame_width"] = window_data["_main_window"]["frame_width"]
         dataset.attrs['plugin_data'] = repr(plugin_data)
-        dataset.attrs['analysis_data'] = repr(window_data["_main_window"]["_analysis"])
         if save_queue_data:
             dataset.attrs['queue_data'] = repr(window_data["_main_window"]["_queue"])
         for pane_name,pane_position in window_data.items():
             if pane_name != "_main_window":
                 dataset.attrs[pane_name] = pane_position
-
-        # Save analysis server settings:
-        #dataset = data_group.create_group("analysis_server")
-        #dataset.attrs['send_for_analysis'] = self.blacs.analysis_submission.toggle_analysis.get_active()
-        #dataset.attrs['server'] = self.blacs.analysis_submission.analysis_host.get_text()

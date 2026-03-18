@@ -6,7 +6,6 @@ API Reference
     :template: autosummary-module.rst
     :recursive:
 
-    blacs.analysis_submission
     blacs.compile_and_restart
     blacs.device_base_class
     blacs.experiment_queue
