@@ -14,7 +14,6 @@ import logging
 import os
 import subprocess
 import sys
-import ast
 
 from qtutils.qt.QtCore import Qt
 from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
@@ -202,9 +201,8 @@ class RecompileNotification(object):
         labconfig = self.BLACS['exp_config']
         try:
             hashable_types = labconfig.get(PLUGIN_CONFIG_SECTION, 'connection_table.hashable_types')
-            hashable_types = ast.literal_eval(hashable_types)
         except labconfig.NoOptionError:
-            hashable_types = ['.py', '.txt', '.toml', '.ini', '.json']
+            hashable_types = ['.py', '.txt', '.ini', '.toml', '.json']
         try:
             polling_interval = self.BLACS['exp_config'].getfloat(
                 PLUGIN_CONFIG_SECTION, 'connection_table.polling_interval'
