@@ -93,7 +93,7 @@ from labscript_utils.connections import ConnectionTable
 #Draggable Tab Widget Code
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 # Lab config code
-from labscript_utils.labconfig import LabConfig
+from labscript_utils.labconfig import LabConfig, get_app_saved_configs_dir
 from labscript_profile import hostname
 # Shot executor code
 from blacs.experiment_queue import QueueManager, QueueTreeview
@@ -670,9 +670,7 @@ if __name__ == '__main__':
         "ports": ["blacs"],
     }
     exp_config = LabConfig(required_params=required_config_params)
-    settings_dir = Path(exp_config.get('DEFAULT', 'app_saved_configs'), 'blacs')
-    if not settings_dir.exists():
-        os.makedirs(settings_dir, exist_ok=True)
+    settings_dir = Path(get_app_saved_configs_dir(exp_config, 'blacs'))
     settings_path = str(settings_dir / f'{hostname()}_BLACS.h5')
 
     port = int(exp_config.get('ports', 'blacs'))
