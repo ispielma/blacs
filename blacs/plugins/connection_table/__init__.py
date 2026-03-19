@@ -12,7 +12,6 @@
 #####################################################################
 import logging
 import os
-import subprocess
 import sys
 
 from qtutils.qt.QtCore import Qt
@@ -20,6 +19,7 @@ from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
 from qtutils.qt.QtWidgets import QMessageBox, QFileDialog
 
 from blacs.compile_and_restart import CompileAndRestart
+from labscript_utils.labconfig import launch_from_config
 from labscript_utils.filewatcher import FileWatcher
 from qtutils import inmain, UiLoader
 from blacs.plugins import PLUGINS_DIR, PLUGIN_CONFIG_SECTION
@@ -100,20 +100,16 @@ class Menu(object):
         self.BLACS['settings'].create_dialog(goto_page=Setting)
       
     def on_edit_connection_table(self,*args,**kwargs):
-        # get path to text editor
-        editor_path = self.BLACS['exp_config'].get('programs','text_editor')
-        editor_args = self.BLACS['exp_config'].get('programs','text_editor_arguments')
-        if editor_path:  
-            if '{file}' in editor_args:
-                editor_args = editor_args.replace('{file}', self.BLACS['exp_config'].get('paths','connection_table_py'))
-            else:
-                editor_args = self.BLACS['exp_config'].get('paths','connection_table_py') + " " + editor_args            
-            try:
-                subprocess.Popen([editor_path,editor_args])
-            except Exception:
-                QMessageBox.information(self.BLACS['ui'],"Error","Unable to launch text editor. Check the path is valid in the experiment config file (%s) (you must restart BLACS if you edit this file)"%self.BLACS['exp_config'].config_path)
-        else:
-            QMessageBox.information(self.BLACS['ui'],"Error","No text editor path was specified in the experiment config file (%s) (you must restart BLACS if you edit this file)"%self.BLACS['exp_config'].config_path)
+        launch_from_config(
+            self.BLACS['exp_config'],
+            self.BLACS['exp_config'].get('paths', 'connection_table_py'),
+            'text_editor',
+            'text_editor_arguments',
+            "No text editor path was specified in the experiment config file (%s) (you must restart BLACS if you edit this file)"
+            % self.BLACS['exp_config'].config_path,
+            "Unable to launch text editor. Check the path is valid in the experiment config file (%s) (you must restart BLACS if you edit this file). Error was: %s",
+            lambda message: QMessageBox.information(self.BLACS['ui'], "Error", message),
+        )
     
     def on_recompile_connection_table(self,*args,**kwargs):
         logger.info('recompile connection table called')
