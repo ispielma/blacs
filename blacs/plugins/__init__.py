@@ -25,6 +25,7 @@ default_plugins = ['connection_table', 'general', 'theme']
 logger = logging.getLogger('BLACS.plugins')
 
 DEFAULT_PRIORITY = 10
+PLUGIN_CONFIG_SECTION = 'blacs/plugins'
 
 class Callback(object):
     """Class wrapping a callable. At present only differs from a regular
@@ -79,19 +80,19 @@ def get_callbacks(name):
 
 
 exp_config = LabConfig()
-if not exp_config.has_section('BLACS/plugins'):
-    exp_config.add_section('BLACS/plugins')
+if not exp_config.has_section(PLUGIN_CONFIG_SECTION):
+    exp_config.add_section(PLUGIN_CONFIG_SECTION)
 
 modules = {}
 for module_name in os.listdir(PLUGINS_DIR):
     if os.path.isdir(os.path.join(PLUGINS_DIR, module_name)) and module_name != '__pycache__':
         # is it a new plugin?
         # If so lets add it to the config
-        if not module_name in [name for name, val in exp_config.items('BLACS/plugins')]:
-            exp_config.set('BLACS/plugins', module_name, str(module_name in default_plugins))
+        if not module_name in [name for name, val in exp_config.items(PLUGIN_CONFIG_SECTION)]:
+            exp_config.set(PLUGIN_CONFIG_SECTION, module_name, str(module_name in default_plugins))
 
         # only load activated plugins
-        if exp_config.getboolean('BLACS/plugins', module_name):
+        if exp_config.getboolean(PLUGIN_CONFIG_SECTION, module_name):
             try:
                 module = importlib.import_module('blacs.plugins.'+module_name)
             except Exception:

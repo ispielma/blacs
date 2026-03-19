@@ -23,7 +23,7 @@ from qtutils.qt.QtWidgets import QMessageBox, QFileDialog
 from blacs.compile_and_restart import CompileAndRestart
 from labscript_utils.filewatcher import FileWatcher
 from qtutils import inmain, UiLoader
-from blacs.plugins import PLUGINS_DIR
+from blacs.plugins import PLUGINS_DIR, PLUGIN_CONFIG_SECTION
 
 FILEPATH_COLUMN = 0
 name = "Connection Table"
@@ -201,12 +201,14 @@ class RecompileNotification(object):
         file_list = [self.BLACS['connection_table_labscript'], self.BLACS['connection_table_h5file']]
         labconfig = self.BLACS['exp_config']
         try:
-            hashable_types = labconfig.get('BLACS/plugins', 'connection_table.hashable_types')
+            hashable_types = labconfig.get(PLUGIN_CONFIG_SECTION, 'connection_table.hashable_types')
             hashable_types = ast.literal_eval(hashable_types)
         except labconfig.NoOptionError:
-            hashable_types = ['.py', '.txt', '.ini', '.json']
+            hashable_types = ['.py', '.txt', '.toml', '.ini', '.json']
         try:
-            polling_interval = self.BLACS['exp_config'].getfloat('BLACS/plugins', 'connection_table.polling_interval')
+            polling_interval = self.BLACS['exp_config'].getfloat(
+                PLUGIN_CONFIG_SECTION, 'connection_table.polling_interval'
+            )
         except labconfig.NoOptionError:
             polling_interval = 1
         logger.info('Using hashable_types: {}; polling_interval: {}'.format(hashable_types, polling_interval))
