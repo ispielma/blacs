@@ -263,6 +263,7 @@ class RecompileNotification(object):
     
 class Setting(object):
     name = name
+    GLOBALS_EXTENSION = '.toml'
 
     def __init__(self,data):
         # This is our data store!
@@ -277,6 +278,9 @@ class Setting(object):
             #set the default sort order if it wasn't previousl saved
             if '%s_sort_order'%store not in self.data:
                 self.data['%s_sort_order'%store] = 'ASC'
+        self.data['globals_list'] = self._normalise_globals_list(
+            self.data['globals_list']
+        )
         
     # Create the page, return the page and an icon to use on the label (the class name attribute will be used for the label text)   
     def create_dialog(self,notebook):
@@ -381,7 +385,10 @@ class Setting(object):
             self.data['%s_list'%store] = []
             for row_index in range(self.models[store].rowCount()):
                 self.data['%s_list'%store].append(str(self.models[store].item(row_index).text()))
-        
+        self.data['globals_list'] = self._normalise_globals_list(
+            self.data['globals_list']
+        )
+
         return self.data
         
     def close(self):
@@ -389,7 +396,12 @@ class Setting(object):
         
     def add_global_file(self,*args,**kwargs):
         # create file chooser dialog
-        dialog = QFileDialog(None,"select globals files", "C:\\", "HDF5 files (*.h5 *.hdf5)")
+        dialog = QFileDialog(
+            None,
+            "select globals files",
+            "C:\\",
+            "TOML files (*.toml)",
+        )
         dialog.setViewMode(QFileDialog.Detail)
         dialog.setFileMode(QFileDialog.ExistingFiles)
         
@@ -401,7 +413,7 @@ class Setting(object):
                 # but does not have the extension you have limited the dialog to, the OK button is greyed out
                 # but you can hit enter and the file will be selected. 
                 # So we must check the extension of each file here!
-                if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
+                if filepath.lower().endswith(self.GLOBALS_EXTENSION):
                     # make sure the path isn't already in the list
                     if not self.is_filepath_in_store(filepath, 'globals'):
                         self.models['globals'].appendRow(QStandardItem(filepath))
@@ -415,6 +427,14 @@ class Setting(object):
             if str(filepath) == str(self.models[store].item(row_index).text()):
                 return True
         return False
+
+    def _normalise_globals_list(self, paths):
+        globals_paths = []
+        for path in paths:
+            path = os.path.normpath(str(path))
+            if path.lower().endswith(self.GLOBALS_EXTENSION):
+                globals_paths.append(path)
+        return globals_paths
     
     def delete_selected_globals_file(self):
         index_list = self.views['globals'].selectedIndexes()
