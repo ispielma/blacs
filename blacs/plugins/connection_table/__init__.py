@@ -16,11 +16,12 @@ import sys
 
 from qtutils.qt.QtCore import Qt
 from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
-from qtutils.qt.QtWidgets import QMessageBox, QFileDialog
+from qtutils.qt.QtWidgets import QMessageBox
 
 from blacs.compile_and_restart import CompileAndRestart
 from labscript_utils.labconfig import launch_from_config
 from labscript_utils.filewatcher import FileWatcher
+from labscript_utils.qtwidgets.appconfig import select_directory, select_open_files
 from qtutils import inmain, UiLoader
 from blacs.plugins import PLUGINS_DIR, PLUGIN_CONFIG_SECTION
 
@@ -384,27 +385,18 @@ class Setting(object):
         pass
         
     def add_global_file(self,*args,**kwargs):
-        # create file chooser dialog
-        dialog = QFileDialog(None,"select globals files", "C:\\", "HDF5 files (*.h5 *.hdf5)")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.ExistingFiles)
-        
-        if dialog.exec_():
-            selected_files = dialog.selectedFiles()
-            for filepath in selected_files:
-                filepath = os.path.normpath(filepath)
-                # Qt has this weird behaviour where if you type in the name of a file that exists
-                # but does not have the extension you have limited the dialog to, the OK button is greyed out
-                # but you can hit enter and the file will be selected. 
-                # So we must check the extension of each file here!
-                if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
-                    # make sure the path isn't already in the list
-                    if not self.is_filepath_in_store(filepath, 'globals'):
-                        self.models['globals'].appendRow(QStandardItem(filepath))
-         
-            self.views['globals'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['globals_sort_order']))
-            
-        dialog.deleteLater()
+        selected_files = select_open_files(
+            None,
+            "select globals files",
+            "C:\\",
+            "HDF5 files (*.h5 *.hdf5)",
+        )
+        for filepath in selected_files:
+            filepath = os.path.normpath(filepath)
+            if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
+                if not self.is_filepath_in_store(filepath, 'globals'):
+                    self.models['globals'].appendRow(QStandardItem(filepath))
+        self.views['globals'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['globals_sort_order']))
             
     def is_filepath_in_store(self,filepath,store):
         for row_index in range(self.models[store].rowCount()):
@@ -421,45 +413,26 @@ class Setting(object):
         self.views['globals'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['globals_sort_order']))
             
     def add_calibration_file(self):
-        # create file chooser dialog
-        dialog = QFileDialog(None,"Select unit conversion scripts", "C:\\", "Python files (*.py *.pyw)")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.ExistingFiles)
-        
-        if dialog.exec_():
-            selected_files = dialog.selectedFiles()
-            for filepath in selected_files:
-                filepath = os.path.normpath(filepath)
-                # Qt has this weird behaviour where if you type in the name of a file that exists
-                # but does not have the extension you have limited the dialog to, the OK button is greyed out
-                # but you can hit enter and the file will be selected. 
-                # So we must check the extension of each file here!
-                if filepath.endswith('.py') or filepath.endswith('.pyw'):
-                    # make sure the path isn't already in the list
-                    if not self.is_filepath_in_store(filepath,'calibrations'):
-                        self.models['calibrations'].appendRow(QStandardItem(filepath))
-         
-            self.views['calibrations'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['calibrations_sort_order']))
-        
-        dialog.deleteLater()
-        
-    def add_calibration_folder(self):
-        # create file chooser dialog
-        dialog = QFileDialog(None,"Select unit conversion folder", "C:\\", "")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.Directory)
-        
-        if dialog.exec_():
-            selected_files = dialog.selectedFiles()
-            for filepath in selected_files:
-                filepath = os.path.normpath(filepath)
-                # make sure the path isn't already in the list
+        selected_files = select_open_files(
+            None,
+            "Select unit conversion scripts",
+            "C:\\",
+            "Python files (*.py *.pyw)",
+        )
+        for filepath in selected_files:
+            filepath = os.path.normpath(filepath)
+            if filepath.endswith('.py') or filepath.endswith('.pyw'):
                 if not self.is_filepath_in_store(filepath,'calibrations'):
                     self.models['calibrations'].appendRow(QStandardItem(filepath))
-         
-            self.views['calibrations'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['calibrations_sort_order']))
+        self.views['calibrations'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['calibrations_sort_order']))
         
-        dialog.deleteLater()
+    def add_calibration_folder(self):
+        filepath = select_directory(None, "Select unit conversion folder", "C:\\")
+        if filepath is not None:
+            filepath = os.path.normpath(filepath)
+            if not self.is_filepath_in_store(filepath,'calibrations'):
+                self.models['calibrations'].appendRow(QStandardItem(filepath))
+        self.views['calibrations'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['calibrations_sort_order']))
     
     def delete_selected_conversion_file(self):
         index_list = self.views['calibrations'].selectedIndexes()

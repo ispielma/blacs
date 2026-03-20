@@ -92,6 +92,12 @@ logger.info(f'BLACS version: {blacs.__version__}')
 from labscript_utils.connections import ConnectionTable
 #Draggable Tab Widget Code
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
+from labscript_utils.qtwidgets.appconfig import (
+    error_dialog,
+    question_dialog,
+    select_open_file,
+    select_save_file,
+)
 # Lab config code
 from labscript_utils.labconfig import LabConfig, get_app_saved_configs_dir
 from labscript_profile import hostname
@@ -460,67 +466,50 @@ class BLACS(object):
 
 
     def on_load_front_panel(self,*args,**kwargs):
-        # get the file:
-        # create file chooser dialog
-        dialog = QFileDialog(None,"Select file to load", self.exp_config.get('paths','experiment_shot_storage'), "HDF5 files (*.h5 *.hdf5)")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.ExistingFile)
-        if dialog.exec_():
-            selected_files = dialog.selectedFiles()
-            filepath = str(selected_files[0])
-            # Qt has this weird behaviour where if you type in the name of a file that exists
-            # but does not have the extension you have limited the dialog to, the OK button is greyed out
-            # but you can hit enter and the file will be selected.
-            # So we must check the extension of each file here!
-            if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
-                try:
-                    # TODO: Warn that this will restore values, but not channels that are locked
-                    message = QMessageBox()
-                    message.setText("""Warning: This will modify front panel values and cause device output values to update.
+        filepath = select_open_file(
+            None,
+            "Select file to load",
+            self.exp_config.get('paths','experiment_shot_storage'),
+            "HDF5 files (*.h5 *.hdf5)",
+        )
+        if filepath is None:
+            return
+        if not (filepath.endswith('.h5') or filepath.endswith('.hdf5')):
+            error_dialog(self.ui, "BLACS", "You did not select a file ending with .h5 or .hdf5. Please try again")
+            QTimer.singleShot(10,self.on_load_front_panel)
+            return
+        try:
+            message = """Warning: This will modify front panel values and cause device output values to update.
                     \nThe queue will be cleared.
                     \n
-                    \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?""")
-                    message.setIcon(QMessageBox.Warning)
-                    message.setWindowTitle("BLACS")
-                    message.setStandardButtons(QMessageBox.Yes|QMessageBox.No)
+                    \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?"""
+            if question_dialog(self.ui, "BLACS", message):
+                front_panel_settings = FrontPanelSettings(filepath, self.connection_table)
+                settings,question,error,tab_data = front_panel_settings.restore()
+                #TODO: handle question/error
 
-                    if message.exec_() == QMessageBox.Yes:
-                        front_panel_settings = FrontPanelSettings(filepath, self.connection_table)
-                        settings,question,error,tab_data = front_panel_settings.restore()
-                        #TODO: handle question/error
+                # Restore window data
+                self.restore_window(tab_data)
+                self.order_tabs(tab_data)
+                self.update_all_tab_settings(settings,tab_data)
 
-                        # Restore window data
-                        self.restore_window(tab_data)
-                        self.order_tabs(tab_data)
-                        self.update_all_tab_settings(settings,tab_data)
-
-                        # restore queue data
-                        if 'queue_data' not in tab_data['BLACS settings']:
-                            tab_data['BLACS settings']['queue_data'] = {}
-                        else:
-                            # quick fix for qt objects not loading that were saved before qtutil 2 changes
-                            try:
-                                tab_data['BLACS settings']['queue_data'] = eval(tab_data['BLACS settings']['queue_data'])
-                            except NameError:
-                                tab_data['BLACS settings']['queue_data'] = {}
-                        self.queue.restore_save_data(tab_data['BLACS settings']['queue_data'])
-                except Exception as e:
-                    logger.exception("Unable to load the front panel in %s."%(filepath))
-                    message = QMessageBox()
-                    message.setText("Unable to load the front panel. The error encountered is printed below.\n\n%s"%str(e))
-                    message.setIcon(QMessageBox.Information)
-                    message.setWindowTitle("BLACS")
-                    message.exec_()
-                finally:
-                    dialog.deleteLater()
-            else:
-                dialog.deleteLater()
-                message = QMessageBox()
-                message.setText("You did not select a file ending with .h5 or .hdf5. Please try again")
-                message.setIcon(QMessageBox.Information)
-                message.setWindowTitle("BLACS")
-                message.exec_()
-                QTimer.singleShot(10,self.on_load_front_panel)
+                # restore queue data
+                if 'queue_data' not in tab_data['BLACS settings']:
+                    tab_data['BLACS settings']['queue_data'] = {}
+                else:
+                    # quick fix for qt objects not loading that were saved before qtutil 2 changes
+                    try:
+                        tab_data['BLACS settings']['queue_data'] = eval(tab_data['BLACS settings']['queue_data'])
+                    except NameError:
+                        tab_data['BLACS settings']['queue_data'] = {}
+                self.queue.restore_save_data(tab_data['BLACS settings']['queue_data'])
+        except Exception as e:
+            logger.exception("Unable to load the front panel in %s."%(filepath))
+            error_dialog(
+                self.ui,
+                "BLACS",
+                "Unable to load the front panel. The error encountered is printed below.\n\n%s" % str(e),
+            )
 
     def on_save_exit(self):
         # Save front panel
@@ -528,9 +517,7 @@ class BLACS(object):
 
         if len(self.failed_device_settings) > 0:
             message = ('Save data from broken tabs? \n Broken tabs are: \n {}'.format(list(self.failed_device_settings.keys())))
-            reply = QMessageBox.question(self.ui, 'Save broken tab data?', message,
-                                               QMessageBox.Yes | QMessageBox.No)
-            if reply == QMessageBox.Yes:
+            if question_dialog(self.ui, 'Save broken tab data?', message):
                 data[0].update(self.failed_device_settings)
 
         # with h5py.File(self.settings_path,'r+') as h5file:
@@ -599,22 +586,15 @@ class BLACS(object):
     def on_save_front_panel(self,*args,**kwargs):
         data = self.front_panel_settings.get_save_data()
 
-        # Open save As dialog
-        dialog = QFileDialog(None,"Save BLACS state", self.exp_config.get('paths','experiment_shot_storage'), "HDF5 files (*.h5)")
-        try:
-            dialog.setViewMode(QFileDialog.Detail)
-            dialog.setFileMode(QFileDialog.AnyFile)
-            dialog.setAcceptMode(QFileDialog.AcceptSave)
-
-            if dialog.exec_():
-                current_file = str(dialog.selectedFiles()[0])
-                if not current_file.endswith('.h5'):
-                    current_file += '.h5'
-                self.front_panel_settings.save_front_panel_to_h5(current_file,data[0],data[1],data[2],data[3])
-        except Exception:
-            raise
-        finally:
-            dialog.deleteLater()
+        current_file = select_save_file(
+            None,
+            "Save BLACS state",
+            self.exp_config.get('paths','experiment_shot_storage'),
+            "HDF5 files (*.h5)",
+            suffix='.h5',
+        )
+        if current_file is not None:
+            self.front_panel_settings.save_front_panel_to_h5(current_file,data[0],data[1],data[2],data[3])
 
     def on_open_preferences(self,*args,**kwargs):
         self.settings.create_dialog()

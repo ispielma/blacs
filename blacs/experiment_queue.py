@@ -38,6 +38,10 @@ import labscript_utils.h5_lock, h5py
 from qtutils import inmain_decorator, inmain
 
 from labscript_utils.qtwidgets.elide_label import elide_label
+from labscript_utils.qtwidgets.appconfig import (
+    error_dialog as show_error_dialog,
+    select_open_file,
+)
 from labscript_utils.connections import ConnectionTable
 import labscript_utils.properties
 from labscript_utils.shared_drive import path_to_agnostic, path_to_local
@@ -310,19 +314,16 @@ class QueueManager(object):
             return
         message = self.process_request(text)
         if not message.startswith('Local override shot loaded successfully'):
-            QMessageBox.warning(self._ui, 'BLACS', message)
+            show_error_dialog(self._ui, 'BLACS', message)
             self._sync_local_override_widgets()
 
     def on_add_shots_triggered(self):
-        shot_file = QFileDialog.getOpenFileName(
+        shot_file = select_open_file(
             self._ui,
             'Select shot file',
             self.last_opened_shots_folder,
             'HDF5 files (*.h5 *.hdf5)',
         )
-        if isinstance(shot_file, tuple):
-            shot_file, _ = shot_file
-        shot_file = str(shot_file)
         if not shot_file:
             return
 
