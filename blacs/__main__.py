@@ -22,7 +22,7 @@ desktop_app.set_process_appid('blacs')
 
 
 # Splash screen
-from labscript_utils.splash import Splash, get_qapplication
+from labscript_utils.splash import Splash, get_qapplication, run_qapplication
 splash = Splash(os.path.join(os.path.dirname(__file__), 'blacs.svg'))
 splash.show()
 
@@ -644,7 +644,7 @@ if __name__ == '__main__':
 
     splash.update_text('loading labconfig')
     required_config_params = {
-        "DEFAULT": ["apparatus_name", "app_saved_configs"],
+        "default": ["apparatus_name", "app_saved_configs"],
         "programs": ["text_editor", "text_editor_arguments",],
         "paths": ["shared_drive", "connection_table_h5", "connection_table_py",],
         "ports": ["blacs"],
@@ -675,7 +675,4 @@ if __name__ == '__main__':
     logger.info('BLACS instantiated')
     splash.hide()
 
-    def execute_program():
-        qapplication.exec_()
-
-    sys.exit(execute_program())
+    sys.exit(run_qapplication(qapplication))
