@@ -689,6 +689,17 @@ class QueueManager(object):
             return os.path.abspath(candidate)
         return os.path.abspath(path_to_local(candidate))
 
+    def _return_offer_to_runmanager(self, agnostic_path):
+        try:
+            return self._get_runmanager_client().queue_add_shot(
+                agnostic_path, start=True
+            )
+        except Exception:
+            self._logger.exception(
+                'Failed to return rejected shot %s to runmanager', agnostic_path
+            )
+            return False
+
     def _request_next_from_runmanager(self):
         try:
             response = self._get_runmanager_client().request('queue_request_next')
@@ -706,12 +717,14 @@ class QueueManager(object):
         path = self._path_from_offer(offer['agnostic_path'])
         result, message = self._validate_connection_table(path)
         if not result:
+            restored = self._return_offer_to_runmanager(offer['agnostic_path'])
             self.manager_paused = True
             self.set_status('Rejected shot from runmanager\nQueue paused')
             self._logger.error(
-                'Rejected runmanager shot %s because it failed validation: %s',
+                'Rejected runmanager shot %s because it failed validation: %s Returned=%s',
                 path,
                 message.strip(),
+                restored,
             )
             return None, 'invalid'
 
