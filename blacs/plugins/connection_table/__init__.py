@@ -279,6 +279,13 @@ class Setting(object):
             #set the default sort order if it wasn't previousl saved
             if '%s_sort_order'%store not in self.data:
                 self.data['%s_sort_order'%store] = 'ASC'
+
+    def normalize_globals_path(self, filepath):
+        filepath = os.path.normpath(str(filepath))
+        root, ext = os.path.splitext(filepath)
+        if ext.lower() in ('.h5', '.hdf5'):
+            return root + '.toml'
+        return filepath
         
     # Create the page, return the page and an icon to use on the label (the class name attribute will be used for the label text)   
     def create_dialog(self,notebook):
@@ -313,6 +320,8 @@ class Setting(object):
             # If we have saved data in the data store, then load it into the list store
             if '%s_list'%store in self.data:
                 for path in self.data['%s_list'%store]:
+                    if store == 'globals':
+                        path = self.normalize_globals_path(path)
                     self.models[store].appendRow(QStandardItem(path))
             # otherwise add an empty list to our data store, and leave the liststore empty
             else:
@@ -372,6 +381,8 @@ class Setting(object):
     
     def get_value(self,name):
         if name in self.data:
+            if name == 'globals_list':
+                return [self.normalize_globals_path(path) for path in self.data[name]]
             return self.data[name]
         
         return None
@@ -382,7 +393,10 @@ class Setting(object):
             # clear the existing list
             self.data['%s_list'%store] = []
             for row_index in range(self.models[store].rowCount()):
-                self.data['%s_list'%store].append(str(self.models[store].item(row_index).text()))
+                path = str(self.models[store].item(row_index).text())
+                if store == 'globals':
+                    path = self.normalize_globals_path(path)
+                self.data['%s_list'%store].append(path)
         
         return self.data
         
@@ -391,19 +405,19 @@ class Setting(object):
         
     def add_global_file(self,*args,**kwargs):
         # create file chooser dialog
-        dialog = QFileDialog(None,"select globals files", "C:\\", "HDF5 files (*.h5 *.hdf5)")
+        dialog = QFileDialog(None,"select globals files", "C:\\", "Globals files (*.toml *.h5 *.hdf5)")
         dialog.setViewMode(QFileDialog.Detail)
         dialog.setFileMode(QFileDialog.ExistingFiles)
         
         if dialog.exec_():
             selected_files = dialog.selectedFiles()
             for filepath in selected_files:
-                filepath = os.path.normpath(filepath)
+                filepath = self.normalize_globals_path(filepath)
                 # Qt has this weird behaviour where if you type in the name of a file that exists
                 # but does not have the extension you have limited the dialog to, the OK button is greyed out
                 # but you can hit enter and the file will be selected. 
                 # So we must check the extension of each file here!
-                if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
+                if filepath.endswith('.toml'):
                     # make sure the path isn't already in the list
                     if not self.is_filepath_in_store(filepath, 'globals'):
                         self.models['globals'].appendRow(QStandardItem(filepath))
