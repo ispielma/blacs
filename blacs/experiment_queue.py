@@ -804,6 +804,13 @@ class QueueManager(object):
     def get_device_error_state(self, name, device_list):
         return device_list[name].error_message
 
+    def _abort_buffered_devices(self, devices_in_use, restart_function):
+        self.current_queue = queue.Queue()
+        for devicename, tab in devices_in_use.items():
+            if tab.mode == MODE_BUFFERED or tab.mode == MODE_TRANSITION_TO_BUFFERED:
+                tab.abort_buffered(self.current_queue)
+            inmain(tab.disconnect_restart_receiver, restart_function)
+
     def manage(self):
         logger = logging.getLogger('BLACS.queue_manager.thread')
         process_tree.zlock_client.set_thread_name('queue_manager')
@@ -1071,12 +1078,7 @@ class QueueManager(object):
                     shutil.move(temp_path, path.replace('.h5', '_retry.h5'))
                     path = path.replace('.h5', '_retry.h5')
                 self.prepend(path)
-
-                self.current_queue = queue.Queue()
-                for devicename, tab in devices_in_use.items():
-                    if tab.mode == MODE_BUFFERED or tab.mode == MODE_TRANSITION_TO_BUFFERED:
-                        tab.abort_buffered(self.current_queue)
-                    inmain(tab.disconnect_restart_receiver, restart_function)
+                self._abort_buffered_devices(devices_in_use, restart_function)
                 self.set_status('Error in queue manager\nQueue paused')
 
                 try:
@@ -1163,6 +1165,7 @@ class QueueManager(object):
                 error_condition = True
                 logger.exception('Error in queue manager execution. Queue paused.')
                 self.set_status('Error in queue manager\nQueue paused')
+                self._abort_buffered_devices(devices_in_use, restart_function)
                 zprocess.raise_exception_in_thread(sys.exc_info())
 
             if error_condition:
