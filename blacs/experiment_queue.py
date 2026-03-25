@@ -358,9 +358,17 @@ class QueueManager(object):
     def get_local_override(self):
         return self._local_override_path
 
-    @inmain_decorator(True)
     def _get_local_override_fallback(self):
-        return self._local_override_path
+        h5_filepath = self.get_local_override()
+        if h5_filepath is None:
+            return None
+        try:
+            return self._make_repeat_copy(h5_filepath, 'local_override')
+        except Exception:
+            self._logger.exception(
+                'Failed to create local override fallback copy of %s', h5_filepath
+            )
+            return None
 
     @inmain_decorator(True)
     def append(self, h5files):
