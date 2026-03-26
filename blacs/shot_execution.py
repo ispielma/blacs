@@ -35,6 +35,7 @@ from qtutils import inmain_decorator, inmain
 
 from labscript_utils.qtwidgets.elide_label import elide_label
 from labscript_utils.connections import ConnectionTable
+from labscript_utils.file_utils import next_available_indexed_filepath
 import labscript_utils.properties
 from labscript_utils.shared_drive import path_to_agnostic, path_to_local
 
@@ -67,6 +68,7 @@ class ShotExecutor(object):
         self._runmanager_notify_error_logged = False
         self.failure_reason = None
         self.completed_shots = queue.Queue()
+        self._next_rep_index = {}
         
         self._logger = logging.getLogger('BLACS.ShotExecutor')
 
@@ -186,26 +188,38 @@ class ShotExecutor(object):
         self._ui.local_override_lineEdit.setText(shot_file)
 
     def runmanager_rpc(
-        self, client_attr, error_logged_attr, method_name, unavailable_message, *args
+        self,
+        client_attr,
+        error_logged_attr,
+        method_name,
+        unavailable_message,
+        *args,
+        timeout=1,
+        update_status=True,
     ):
         try:
-            self.runmanager_online = 'checking'
+            if update_status:
+                self.runmanager_online = 'checking'
             if runmanager_remote is None:
                 raise RuntimeError('runmanager.remote is unavailable')
             client = getattr(self, client_attr)
             if client is None:
-                client = runmanager_remote.Client(timeout=1)
+                client = runmanager_remote.Client(timeout=timeout)
                 setattr(self, client_attr, client)
+            elif client.timeout != timeout:
+                client.timeout = timeout
             response = getattr(client, method_name)(*args)
-            self.failure_reason = None
-            self.runmanager_online = 'online'
+            if update_status:
+                self.failure_reason = None
+                self.runmanager_online = 'online'
             setattr(self, error_logged_attr, False)
             return True, response
         except Exception as exc:
             setattr(self, client_attr, None)
-            self.failure_reason = str(exc)
-            self.runmanager_online = 'offline'
-            if not getattr(self, error_logged_attr):
+            if update_status:
+                self.failure_reason = str(exc)
+                self.runmanager_online = 'offline'
+            if update_status and not getattr(self, error_logged_attr):
                 self._logger.info(unavailable_message, exc)
                 setattr(self, error_logged_attr, True)
             return False, None
@@ -225,6 +239,7 @@ class ShotExecutor(object):
                 'notify_shot_complete',
                 'Runmanager unavailable while reporting shot completion: %s',
                 pending_agnostic_path,
+                update_status=False,
             )
             if success:
                 pending_agnostic_path = None
@@ -277,17 +292,14 @@ class ShotExecutor(object):
             return None, message
             
     def new_rep_name(self, h5_filepath):
-        basename, ext = os.path.splitext(h5_filepath)
-        if '_rep' in basename and ext == '.h5':
-            reps = basename.split('_rep')[-1]
-            try:
-                reps = int(reps)
-            except ValueError:
-                # not a rep
-                pass
-            else:
-                return ''.join(basename.split('_rep')[:-1]) + '_rep%05d.h5' % (reps + 1), reps + 1
-        return basename + '_rep%05d.h5' % 1, 1
+        start = self._next_rep_index.get(h5_filepath, 1)
+        next_path, index = next_available_indexed_filepath(
+            h5_filepath,
+            '_rep{index:05d}',
+            start=start,
+        )
+        self._next_rep_index[h5_filepath] = index + 1
+        return next_path, index
         
     def clean_h5_file(self, h5file, new_h5_file, repeat_number=0):
         try:
@@ -387,14 +399,29 @@ class ShotExecutor(object):
                 agnostic_path = None
                 requested_from_runmanager = False
                 runmanager_failed = False
-                request_succeeded, agnostic_path = self.runmanager_rpc(
+                alive, _ = self.runmanager_rpc(
                     '_runmanager_request_client',
                     '_runmanager_request_error_logged',
-                    'queue_request_next',
-                    'Runmanager unavailable while requesting the next shot: %s',
+                    'say_hello',
+                    'Runmanager unavailable while checking status: %s',
+                    timeout=1,
                 )
-                requested_from_runmanager = bool(agnostic_path)
-                runmanager_failed = not request_succeeded
+                if alive:
+                    request_succeeded, agnostic_path = self.runmanager_rpc(
+                        '_runmanager_request_client',
+                        '_runmanager_request_error_logged',
+                        'queue_request_next',
+                        'Runmanager unavailable while requesting the next shot: %s',
+                        timeout=self.BLACS.exp_config.getfloat(
+                            'timeouts', 'communication_timeout', fallback=60
+                        ),
+                        update_status=False,
+                    )
+                    requested_from_runmanager = bool(agnostic_path)
+                    runmanager_failed = not request_succeeded
+                else:
+                    request_succeeded = False
+                    runmanager_failed = True
 
                 if not agnostic_path:
                     local_override_path = str(
