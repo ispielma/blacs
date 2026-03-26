@@ -716,8 +716,7 @@ class Tab(object):
         self.notebook.insertTab(currentpage,self._ui,self.device_name)
         self.notebook.setCurrentWidget(self._ui)
             
-        # If BLACS is waiting on this tab for something, tell it to abort!
-        # self.BLACS.current_queue.put('abort')
+        # If BLACS is waiting on this tab for something, tell it to abort.
     
     def queue_work(self,worker_process,worker_function,*args,**kwargs):
         return worker_process,worker_function,args,kwargs

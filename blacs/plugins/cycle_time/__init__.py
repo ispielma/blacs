@@ -39,7 +39,7 @@ class Plugin(object):
         self.initial_settings = initial_settings
         self.BLACS = None
         self.time_of_last_shot = None
-        self.queue = Queue()
+        self.abort_queue = Queue()
         self.target_cycle_time = None
         self.delay_after_programming = None
         self.next_target_cycle_time = None
@@ -47,7 +47,7 @@ class Plugin(object):
 
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
-        self.queue_manager = self.BLACS['experiment_queue']
+        self.shot_executor = self.BLACS['shot_execution']
 
     def get_save_data(self):
         return {}
@@ -59,7 +59,7 @@ class Plugin(object):
         }
         
     def _abort(self):
-        self.queue.put('abort')
+        self.abort_queue.put('abort')
 
     @callback(priority=100) # this callback should run after all other callbacks.
     def pre_transition_to_buffered(self, h5_filepath):
@@ -94,26 +94,26 @@ class Plugin(object):
             # Wait until it has been self.target_cycle_time since the start of the last
             # shot. Otherwise, return immediately.
             deadline = self.time_of_last_shot + self.target_cycle_time
-            inmain(self.BLACS['ui'].queue_abort_button.clicked.connect, self._abort)
-            # Store the current queue manager status, to restore it after we are done:
-            previous_status = self.queue_manager.get_status()
+            inmain(self.BLACS['ui'].shot_abort_button.clicked.connect, self._abort)
+            # Store the current shot status, to restore it after we are done:
+            previous_status = self.shot_executor.get_status()
             while True:
                 remaining = deadline - monotonic()
                 if remaining <= 0:
                     break
-                self.queue_manager.set_status(
+                self.shot_executor.set_status(
                     'Waiting {:.1f}s for target cycle time'.format(remaining),
                     h5_filepath,
                 )
                 try:
-                    self.queue.get(timeout=remaining % 0.1)
+                    self.abort_queue.get(timeout=remaining % 0.1)
                     break # Got an abort
                 except Empty:
                     continue
             # Disconnect from the abort button:
-            inmain(self.BLACS['ui'].queue_abort_button.clicked.disconnect, self._abort)
+            inmain(self.BLACS['ui'].shot_abort_button.clicked.disconnect, self._abort)
             # Restore previous_status:
-            self.queue_manager.set_status(previous_status, h5_filepath)
+            self.shot_executor.set_status(previous_status, h5_filepath)
 
         self.time_of_last_shot = monotonic()
 

@@ -101,10 +101,10 @@ class Plugin(object):
         self.bar.setMaximum(BAR_MAX)
         self.bar.setAlignment(QtCore.Qt.AlignCenter)
         # Add our controls to the BLACS gui:
-        BLACS['ui'].queue_status_verticalLayout.insertWidget(0, self.ui)
+        BLACS['ui'].shot_status_verticalLayout.insertWidget(0, self.ui)
         # We need to know the name of the master pseudoclock so we can look up
         # the duration of each shot:
-        self.master_pseudoclock = self.BLACS['experiment_queue'].master_pseudoclock
+        self.master_pseudoclock = self.BLACS['shot_execution'].master_pseudoclock
 
         # Check if the wait monitor device, if any, supports wait completed events:
         with h5py.File(self.BLACS['connection_table_h5file'], 'r') as f:

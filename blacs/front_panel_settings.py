@@ -243,8 +243,7 @@ class FrontPanelSettings(object):
                                        "maximized":self.window.isMaximized(),
                                        "frame_height":abs(self.window.frameGeometry().height()-self.window.normalGeometry().height()),
                                        "frame_width":abs(self.window.frameGeometry().width()-self.window.normalGeometry().width()),
-                                       "_analysis":self.blacs.analysis_submission.get_save_data(),
-                                       "_queue":self.blacs.queue.get_save_data(),
+                                       "_shot_execution":self.blacs.shot_executor.get_save_data(),
                                       }
         # Pane positions
         for name,pane in self.panes.items():
@@ -335,7 +334,7 @@ class FrontPanelSettings(object):
                 self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table=True)
 
     @inmain_decorator(wait_for_return=True)
-    def store_front_panel_in_h5(self, hdf5_file,tab_data,notebook_data,window_data,plugin_data,save_conn_table=False,save_queue_data=True):
+    def store_front_panel_in_h5(self, hdf5_file,tab_data,notebook_data,window_data,plugin_data,save_conn_table=False,save_shot_execution_data=True):
         if save_conn_table:
             if 'connection table' in hdf5_file:
                 del hdf5_file['connection table']
@@ -399,14 +398,10 @@ class FrontPanelSettings(object):
         dataset.attrs["window_frame_height"] = window_data["_main_window"]["frame_height"]
         dataset.attrs["window_frame_width"] = window_data["_main_window"]["frame_width"]
         dataset.attrs['plugin_data'] = repr(plugin_data)
-        dataset.attrs['analysis_data'] = repr(window_data["_main_window"]["_analysis"])
-        if save_queue_data:
-            dataset.attrs['queue_data'] = repr(window_data["_main_window"]["_queue"])
+        if save_shot_execution_data:
+            dataset.attrs['shot_execution_data'] = repr(
+                window_data["_main_window"]["_shot_execution"]
+            )
         for pane_name,pane_position in window_data.items():
             if pane_name != "_main_window":
                 dataset.attrs[pane_name] = pane_position
-
-        # Save analysis server settings:
-        #dataset = data_group.create_group("analysis_server")
-        #dataset.attrs['send_for_analysis'] = self.blacs.analysis_submission.toggle_analysis.get_active()
-        #dataset.attrs['server'] = self.blacs.analysis_submission.analysis_host.get_text()

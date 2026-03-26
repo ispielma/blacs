@@ -50,7 +50,7 @@ class Plugin(object):
 
         # Add our controls to the BLACS UI:
         self.ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'controls.ui'))
-        BLACS['ui'].queue_controls_frame.layout().addWidget(self.ui)
+        BLACS['ui'].shot_controls_frame.layout().addWidget(self.ui)
 
         # Restore settings to the GUI controls:
         self.ui.spinBox.setValue(self.n_shots_to_keep)
@@ -58,10 +58,7 @@ class Plugin(object):
         # Connect signals:
         self.ui.spinBox.valueChanged.connect(self.on_spinbox_value_changed)
         self.ui.reset_button.clicked.connect(self.on_reset_button_clicked)
-        BLACS['ui'].queue_repeat_button.toggled.connect(self.ui.setEnabled)
-
-        # Our control is only enabled when repeat mode is active:
-        self.ui.setEnabled(BLACS['ui'].queue_repeat_button.isChecked())
+        self.ui.setEnabled(True)
 
     def on_spinbox_value_changed(self, value):
         with self.delete_queue_lock:

@@ -61,7 +61,7 @@ class Plugin(object):
         clean_modified_info = self.initial_settings.get('clean_modified_info', None)
         self.notifications[RecompileNotification].setup_filewatching(clean_modified_info)
         self.menu.close_notification_func = self.notifications[RecompileNotification].on_restart
-        failed_devices = list(self.BLACS['experiment_queue'].BLACS.failed_device_settings.keys())
+        failed_devices = list(self.BLACS['shot_execution'].BLACS.failed_device_settings.keys())
         if failed_devices:
             self.notifications[RecompileNotification]._show()
             self.notifications[BrokenDevicesNotification].set_broken_devices(failed_devices)

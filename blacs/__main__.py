@@ -99,10 +99,8 @@ from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 # Lab config code
 from labscript_utils.labconfig import LabConfig
 from labscript_profile import hostname
-# Analysis Submission code
-from blacs.analysis_submission import AnalysisSubmission
-# Queue Manager Code
-from blacs.experiment_queue import QueueManager, QueueTreeview
+# Shot execution code
+from blacs.shot_execution import ShotExecutor
 # Module containing hardware compatibility:
 from labscript_utils import device_registry
 # Save/restore frontpanel code
@@ -130,7 +128,7 @@ class BLACSWindow(QMainWindow):
             logger.info('destroy called')
             if not self.blacs.exiting:
                 self.blacs.exiting = True
-                self.blacs.queue.manager_running = False
+                self.blacs.shot_executor.manager_running = False
                 self.blacs.settings.close()
                 experiment_server.shutdown()
                 for module_name, plugin in self.blacs.plugins.items():
@@ -168,6 +166,26 @@ class BLACS(object):
 
     tab_widget_ids = 7
 
+    @staticmethod
+    def _restore_shot_execution_data(blacs_settings):
+        if 'shot_execution_data' in blacs_settings:
+            key = 'shot_execution_data'
+        else:
+            # Legacy HDF5 save-data attribute from before BLACS shot execution
+            # terminology was renamed.
+            key = 'queue_data'
+
+        if key not in blacs_settings:
+            return {}
+
+        data = blacs_settings[key]
+        if isinstance(data, str):
+            try:
+                data = eval(data)
+            except NameError:
+                data = {}
+        return data
+
     def __init__(self,application):
         splash.update_text('loading graphical interface')
         self.qt_application = application
@@ -179,7 +197,6 @@ class BLACS(object):
         logger.info('Loading BLACS ui')
         #self.ui = BLACSWindow(self).ui
         loader = UiLoader()
-        loader.registerCustomWidget(QueueTreeview)
         #loader.registerCustomPromotion('BLACS',BLACSWindow)
         self.ui = loader.load(os.path.join(BLACS_DIR, 'main.ui'), BLACSWindow())
         logger.info('BLACS ui loaded')
@@ -287,29 +304,13 @@ class BLACS(object):
         logger.info('reordering tabs')
         self.order_tabs(tab_data)
 
-        splash.update_text("initialising analysis submission")
-        logger.info('starting analysis submission thread')
-        # setup analysis submission
-        self.analysis_submission = AnalysisSubmission(self,self.ui)
-        if 'analysis_data' not in tab_data['BLACS settings']:
-            tab_data['BLACS settings']['analysis_data'] = {}
-        else:
-            tab_data['BLACS settings']['analysis_data'] = eval(tab_data['BLACS settings']['analysis_data'])
-        self.analysis_submission.restore_save_data(tab_data['BLACS settings']["analysis_data"])
-
-        splash.update_text("starting queue manager")
-        logger.info('starting queue manager thread')
-        # Setup the QueueManager
-        self.queue = QueueManager(self,self.ui)
-        if 'queue_data' not in tab_data['BLACS settings']:
-            tab_data['BLACS settings']['queue_data'] = {}
-        else:
-            # quick fix for qt objects not loading that were saved before qtutil 2 changes
-            try:
-                tab_data['BLACS settings']['queue_data'] = eval(tab_data['BLACS settings']['queue_data'])
-            except NameError:
-                tab_data['BLACS settings']['queue_data'] = {}
-        self.queue.restore_save_data(tab_data['BLACS settings']['queue_data'])
+        splash.update_text("starting shot execution")
+        logger.info('starting shot execution thread')
+        # Setup shot execution
+        self.shot_executor = ShotExecutor(self,self.ui)
+        self.shot_executor.restore_save_data(
+            self._restore_shot_execution_data(tab_data['BLACS settings'])
+        )
 
         blacs_data = {'exp_config':self.exp_config,
                       'ui':self.ui,
@@ -317,7 +318,7 @@ class BLACS(object):
                       'plugins':self.plugins,
                       'connection_table_h5file':self.connection_table_h5file,
                       'connection_table_labscript':self.connection_table_labscript,
-                      'experiment_queue':self.queue
+                      'shot_execution':self.shot_executor
                      }
 
         def create_menu(parent, menu_parameters):
@@ -512,7 +513,7 @@ class BLACS(object):
                     # TODO: Warn that this will restore values, but not channels that are locked
                     message = QMessageBox()
                     message.setText("""Warning: This will modify front panel values and cause device output values to update.
-                    \nThe queue and files waiting to be sent for analysis will be cleared.
+                    \nShot execution state will be replaced.
                     \n
                     \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?""")
                     message.setIcon(QMessageBox.Warning)
@@ -529,22 +530,10 @@ class BLACS(object):
                         self.order_tabs(tab_data)
                         self.update_all_tab_settings(settings,tab_data)
 
-                        # restore queue data
-                        if 'queue_data' not in tab_data['BLACS settings']:
-                            tab_data['BLACS settings']['queue_data'] = {}
-                        else:
-                            # quick fix for qt objects not loading that were saved before qtutil 2 changes
-                            try:
-                                tab_data['BLACS settings']['queue_data'] = eval(tab_data['BLACS settings']['queue_data'])
-                            except NameError:
-                                tab_data['BLACS settings']['queue_data'] = {}
-                        self.queue.restore_save_data(tab_data['BLACS settings']['queue_data'])
-                        # restore analysis data
-                        if 'analysis_data' not in tab_data['BLACS settings']:
-                            tab_data['BLACS settings']['analysis_data'] = {}
-                        else:
-                            tab_data['BLACS settings']['analysis_data'] = eval(tab_data['BLACS settings']['analysis_data'])
-                        self.analysis_submission.restore_save_data(tab_data['BLACS settings']["analysis_data"])
+                        # restore shot execution data
+                        self.shot_executor.restore_save_data(
+                            self._restore_shot_execution_data(tab_data['BLACS settings'])
+                        )
                 except Exception as e:
                     logger.exception("Unable to load the front panel in %s."%(filepath))
                     message = QMessageBox()
@@ -662,18 +651,14 @@ class BLACS(object):
 
 class ExperimentServer(ZMQServer):
     def handler(self, h5_filepath):
-        print(h5_filepath)
         message = self.process(h5_filepath)
         logger.info('Request handler: %s ' % message.strip())
         return message
 
     @inmain_decorator(wait_for_return=True)
     def process(self,h5_filepath):
-        # Convert path to local slashes and shared drive prefix:
-        logger.info('received filepath: %s'%h5_filepath)
-        h5_filepath = labscript_utils.shared_drive.path_to_local(h5_filepath)
-        logger.info('local filepath: %s'%h5_filepath)
-        return app.queue.process_request(h5_filepath)
+        logger.warning('Rejected direct shot submission: %s', h5_filepath)
+        return 'Error: BLACS no longer accepts direct shot submissions\n'
 
 
 if __name__ == '__main__':
@@ -695,7 +680,6 @@ if __name__ == '__main__':
                                       'queue',
                                       'notifications',
                                       'connections',
-                                      'analysis_submission',
                                       'settings',
                                       'front_panel_settings',
                                       'labscript_utils.h5_lock',
