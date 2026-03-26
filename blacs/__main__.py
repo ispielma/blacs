@@ -194,7 +194,6 @@ class BLACS(object):
         # Setup the UI
         self.ui.main_splitter.setStretchFactor(0,0)
         self.ui.main_splitter.setStretchFactor(1,1)
-        self.ui.main_splitter.setSizes([130, 900])
 
         self.tablist = {}
         self.panes = {}
@@ -440,16 +439,7 @@ class BLACS(object):
                 self.ui.showMaximized()
 
             for pane_name,pane in self.panes.items():
-                sizes = tab_data['BLACS settings'][pane_name]
-                if (
-                    pane_name == 'main_splitter'
-                    and pane.orientation() == Qt.Vertical
-                    and len(sizes) == 2
-                ):
-                    total = sum(sizes)
-                    if total > 0 and (sizes[0] > 220 or sizes[0] > 0.4 * total):
-                        sizes = [130, max(total - 130, 1)]
-                pane.setSizes(sizes)
+                pane.setSizes(tab_data['BLACS settings'][pane_name])
 
         except Exception as e:
             logger.exception("Unable to load window and notebook defaults. Exception:"+str(e))

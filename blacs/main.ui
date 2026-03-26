@@ -135,7 +135,7 @@ QToolButton:hover:checked {
          </sizepolicy>
         </property>
         <property name="orientation">
-         <enum>Qt::Vertical</enum>
+         <enum>Qt::Horizontal</enum>
         </property>
         <widget class="QWidget" name="verticalLayoutWidget_2">
          <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -143,12 +143,25 @@ QToolButton:hover:checked {
            <enum>QLayout::SetMinimumSize</enum>
           </property>
           <item>
-           <layout class="QGridLayout" name="gridLayout">
-            <item row="0" column="0">
-             <layout class="QHBoxLayout" name="top_status_row_horizontalLayout">
+           <layout class="QGridLayout" name="gridLayout" columnstretch="0,0">
+            <item row="0" column="1">
+             <layout class="QHBoxLayout" name="horizontalLayout">
               <property name="spacing">
-               <number>6</number>
+               <number>0</number>
               </property>
+              <item>
+               <spacer name="horizontalSpacer_2">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
               <item>
                <widget class="QFrame" name="queue_controls_frame">
                 <property name="frameShape">
@@ -277,121 +290,257 @@ QToolButton:hover:checked {
                </widget>
               </item>
               <item>
-               <widget class="QFrame" name="queue_status_frame">
-                <property name="frameShape">
-                 <enum>QFrame::StyledPanel</enum>
+               <spacer name="horizontalSpacer_4">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
                 </property>
-                <layout class="QVBoxLayout" name="queue_status_verticalLayout">
-                 <property name="spacing">
-                  <number>3</number>
-                 </property>
-                 <property name="leftMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="topMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="rightMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="bottomMargin">
-                  <number>6</number>
-                 </property>
-                 <item>
-                  <widget class="QLabel" name="queue_status">
-                   <property name="text">
-                    <string>[Queue status]</string>
-                   </property>
-                   <property name="alignment">
-                    <set>Qt::AlignCenter</set>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QLabel" name="running_shot_name">
-                   <property name="text">
-                    <string>&lt;b&gt;[running_shot.h5]&lt;/b&gt;</string>
-                   </property>
-                   <property name="alignment">
-                    <set>Qt::AlignCenter</set>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+            <item row="5" column="1">
+             <layout class="QVBoxLayout" name="analysis"/>
+            </item>
+            <item row="4" column="1">
+             <widget class="QueueTreeview" name="treeview">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>1</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="acceptDrops">
+               <bool>true</bool>
+              </property>
+              <property name="toolTip">
+               <string/>
+              </property>
+              <property name="editTriggers">
+               <set>QAbstractItemView::NoEditTriggers</set>
+              </property>
+              <property name="dragDropMode">
+               <enum>QAbstractItemView::DropOnly</enum>
+              </property>
+              <property name="selectionMode">
+               <enum>QAbstractItemView::ExtendedSelection</enum>
+              </property>
+              <property name="textElideMode">
+               <enum>Qt::ElideLeft</enum>
+              </property>
+              <property name="indentation">
+               <number>0</number>
+              </property>
+              <property name="animated">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <layout class="QVBoxLayout" name="verticalLayout_2">
+              <property name="sizeConstraint">
+               <enum>QLayout::SetMinimumSize</enum>
+              </property>
+              <item>
+               <widget class="QToolButton" name="queue_add_button">
+                <property name="toolTip">
+                 <string>Add to queue</string>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+                <property name="icon">
+                 <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
+                  <normaloff>:/qtutils/fugue/plus.png</normaloff>:/qtutils/fugue/plus.png</iconset>
+                </property>
                </widget>
               </item>
               <item>
-               <widget class="QFrame" name="local_override_frame">
+               <widget class="QToolButton" name="queue_delete_button">
+                <property name="focusPolicy">
+                 <enum>Qt::NoFocus</enum>
+                </property>
+                <property name="toolTip">
+                 <string>Delete selected shots from queue</string>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+                <property name="icon">
+                 <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
+                  <normaloff>:/qtutils/fugue/minus.png</normaloff>:/qtutils/fugue/minus.png</iconset>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QToolButton" name="queue_clear_button">
+                <property name="focusPolicy">
+                 <enum>Qt::NoFocus</enum>
+                </property>
+                <property name="toolTip">
+                 <string>Clear queue of all shots</string>
+                </property>
+                <property name="text">
+                 <string>Clear</string>
+                </property>
+                <property name="icon">
+                 <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
+                  <normaloff>:/qtutils/fugue/bin-metal-full.png</normaloff>:/qtutils/fugue/bin-metal-full.png</iconset>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="verticalSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>20</width>
+                  <height>40</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QToolButton" name="queue_push_to_top">
                 <property name="sizePolicy">
-                 <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                  <horstretch>1</horstretch>
+                 <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                  <horstretch>0</horstretch>
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::StyledPanel</enum>
+                <property name="focusPolicy">
+                 <enum>Qt::NoFocus</enum>
                 </property>
-                <layout class="QHBoxLayout" name="local_override_horizontalLayout">
-                 <property name="spacing">
-                  <number>6</number>
-                 </property>
-                 <property name="leftMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="topMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="rightMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="bottomMargin">
-                  <number>6</number>
-                 </property>
-                 <item>
-                  <widget class="QLabel" name="local_override_label">
-                   <property name="text">
-                    <string>Local override shot</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QLineEdit" name="local_override_lineEdit">
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                     <horstretch>1</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                   <property name="toolTip">
-                    <string>Local shot file to run once before BLACS returns to requesting shots from runmanager</string>
-                   </property>
-                   <property name="placeholderText">
-                    <string>Local override shot</string>
-                   </property>
-                   <property name="clearButtonEnabled">
-                    <bool>true</bool>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QToolButton" name="local_override_browse_button">
-                   <property name="toolTip">
-                    <string>Load local override shot</string>
-                   </property>
-                   <property name="text">
-                    <string/>
-                   </property>
-                   <property name="icon">
-                    <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
-                     <normaloff>:/qtutils/fugue/plus.png</normaloff>:/qtutils/fugue/plus.png</iconset>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
+                <property name="toolTip">
+                 <string>Move to top</string>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+                <property name="icon">
+                 <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
+                  <normaloff>:/qtutils/fugue/arrow-stop-090.png</normaloff>:/qtutils/fugue/arrow-stop-090.png</iconset>
+                </property>
                </widget>
               </item>
               <item>
-               <layout class="QVBoxLayout" name="analysis"/>
+               <widget class="QToolButton" name="queue_push_up">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="focusPolicy">
+                 <enum>Qt::NoFocus</enum>
+                </property>
+                <property name="toolTip">
+                 <string>Move up</string>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+                <property name="icon">
+                 <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
+                  <normaloff>:/qtutils/fugue/arrow-090.png</normaloff>:/qtutils/fugue/arrow-090.png</iconset>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QToolButton" name="queue_push_down">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="focusPolicy">
+                 <enum>Qt::NoFocus</enum>
+                </property>
+                <property name="toolTip">
+                 <string>Move down</string>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+                <property name="icon">
+                 <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
+                  <normaloff>:/qtutils/fugue/arrow-270.png</normaloff>:/qtutils/fugue/arrow-270.png</iconset>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QToolButton" name="queue_push_to_bottom">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="focusPolicy">
+                 <enum>Qt::NoFocus</enum>
+                </property>
+                <property name="toolTip">
+                 <string>Move to bottom</string>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+                <property name="icon">
+                 <iconset resource="../../../../usr/local/lib/python2.7/dist-packages/qtutils/icons/icons.qrc">
+                  <normaloff>:/qtutils/fugue/arrow-stop-270.png</normaloff>:/qtutils/fugue/arrow-stop-270.png</iconset>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="verticalSpacer_2">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>20</width>
+                  <height>40</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+            <item row="2" column="1">
+             <layout class="QVBoxLayout" name="queue_status_verticalLayout">
+              <property name="spacing">
+               <number>3</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="queue_status">
+                <property name="text">
+                 <string>[Queue status]</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="running_shot_name">
+                <property name="text">
+                 <string>&lt;b&gt;[running_shot.h5]&lt;/b&gt;</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
               </item>
              </layout>
             </item>
@@ -543,7 +692,7 @@ QToolButton:hover:checked {
      <normaloff>:/qtutils/fugue/plus.png</normaloff>:/qtutils/fugue/plus.png</iconset>
    </property>
    <property name="text">
-    <string>Load local shot</string>
+    <string>Add to queue</string>
    </property>
   </action>
   <action name="actionEdit_Connection_Table">
