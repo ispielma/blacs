@@ -24,8 +24,8 @@ logger = logging.getLogger('BLACS.plugin.%s'%module)
 
 DEFAULT_STYLESHEET = """DigitalOutput {
     font-size: 12px;
-    background-color: rgb(50,100,50,255);
-    border: 1px solid rgb(50,100,50,128);
+    background-color: rgb(50,100,50);
+    border: 1px solid rgb(50,100,50);
     border-radius: 3px;
     padding: 2px;
     color: #202020;
@@ -37,7 +37,7 @@ DigitalOutput:hover {
 }
 
 DigitalOutput:disabled{
-   background-color: rgb(50,100,50,128);
+   background-color: rgb(50,100,50);
    color: #505050;
 }
 
@@ -56,14 +56,15 @@ DigitalOutput:hover:checked {
 
 DigitalOutput:checked:disabled{
    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgba(32,200,32,128), stop: 1 rgba(32,255,32,128));
+                                      stop: 0 rgba(32,200,32), stop: 1 rgba(32,255,32));
+   border: 1px solid #8f8f91;
    color: #606060;
 }
 
 InvertedDigitalOutput {
     font-size: 12px;
-    background-color: rgb(70,100,170,255);
-    border: 1px solid rgb(70,100,170,128);
+    background-color: rgb(70,100,170);
+    border: 1px solid rgb(70,100,170);
     border-radius: 3px;
     padding: 2px;
     color: #202020;
@@ -75,7 +76,7 @@ InvertedDigitalOutput:hover {
 }
 
 InvertedDigitalOutput:disabled{
-   background-color: rgba(70,100,170,128);
+   background-color: rgba(70,100,170);
    color: #505050;
 }
 
@@ -94,7 +95,8 @@ InvertedDigitalOutput:hover:checked {
 
 InvertedDigitalOutput:checked:disabled{
    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgba(50,150,221,128), stop: 1 rgba(32,192,255,128));
+                                      stop: 0 rgba(50,150,221), stop: 1 rgba(32,192,255));
+   border: 1px solid #8f8f91;
    color: #606060;
 }
  """
