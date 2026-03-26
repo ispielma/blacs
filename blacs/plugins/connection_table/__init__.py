@@ -409,7 +409,7 @@ class Setting(object):
         dialog.setViewMode(QFileDialog.Detail)
         dialog.setFileMode(QFileDialog.ExistingFiles)
         
-        if dialog.exec_():
+        if dialog.exec():
             selected_files = dialog.selectedFiles()
             for filepath in selected_files:
                 filepath = self.normalize_globals_path(filepath)
@@ -446,7 +446,7 @@ class Setting(object):
         dialog.setViewMode(QFileDialog.Detail)
         dialog.setFileMode(QFileDialog.ExistingFiles)
         
-        if dialog.exec_():
+        if dialog.exec():
             selected_files = dialog.selectedFiles()
             for filepath in selected_files:
                 filepath = os.path.normpath(filepath)
@@ -469,7 +469,7 @@ class Setting(object):
         dialog.setViewMode(QFileDialog.Detail)
         dialog.setFileMode(QFileDialog.Directory)
         
-        if dialog.exec_():
+        if dialog.exec():
             selected_files = dialog.selectedFiles()
             for filepath in selected_files:
                 filepath = os.path.normpath(filepath)
