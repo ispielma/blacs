@@ -426,23 +426,10 @@ class QueueManager(object):
         except Exception:
             return "H5 file not accessible to Control PC\n"
 
-        current_override = self.get_local_override()
-        if current_override == h5_filepath:
-            rerun = True
         if self.last_completed_shot == h5_filepath:
             rerun = True
 
         if rerun:
-            self._logger.debug(
-                'Direct-loaded shot has already been used, creating a fresh copy'
-            )
-            try:
-                h5_filepath = self._make_repeat_copy(
-                    h5_filepath, repeat_reason='local_override'
-                )
-            except Exception:
-                self._logger.exception('Failed to create a rerun copy for %s', h5_filepath)
-                return 'Cannot create a re-run of this experiment. Is it a valid run file?'
             message = 'Local override shot loaded successfully: experiment to be re-run\n'
         else:
             message = 'Local override shot loaded successfully\n'
