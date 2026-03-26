@@ -294,7 +294,7 @@ class FrontPanelSettings(object):
                             message.setDefaultButton(QMessageBox.No)
                             message.setIcon(QMessageBox.Question)
                             message.setWindowTitle("BLACS")
-                            resp = message.exec_()
+                            resp = message.exec()
 
                             if resp == QMessageBox.Yes :
                                 overwrite = True
@@ -311,7 +311,7 @@ class FrontPanelSettings(object):
                                 message.setText("Front Panel not saved.")
                                 message.setIcon(QMessageBox.Information)
                                 message.setWindowTitle("BLACS")
-                                message.exec_()
+                                message.exec()
                             else:
                                 logger.info("Front Panel not saved as it already existed in the h5 file '"+current_file+"'")
                             return
@@ -325,7 +325,7 @@ class FrontPanelSettings(object):
                     message.setText("The Front Panel was not saved as the file selected contains a connection table which is not a subset of the BLACS connection table.")
                     message.setIcon(QMessageBox.Information)
                     message.setWindowTitle("BLACS")
-                    message.exec_()
+                    message.exec()
                 else:
                     logger.info("Front Panel not saved as the connection table in the h5 file '"+current_file+"' didn't match the current connection table.")
                 return

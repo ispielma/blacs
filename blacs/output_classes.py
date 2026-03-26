@@ -1037,4 +1037,4 @@ if __name__ == '__main__':
     
     
     window.show()
-    sys.exit(qapplication.exec_())
+    sys.exit(qapplication.exec())
