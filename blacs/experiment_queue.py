@@ -359,8 +359,13 @@ class QueueManager(object):
         return self._local_override_path
 
     @inmain_decorator(True)
-    def _get_local_override_fallback(self):
-        return self._local_override_path
+    def _pop_local_override(self):
+        if self._local_override_path is None:
+            return None
+        path = self._local_override_path
+        self._local_override_path = None
+        self._sync_local_override_widgets()
+        return path
 
     @inmain_decorator(True)
     def append(self, h5files):
@@ -661,18 +666,21 @@ class QueueManager(object):
             if not agnostic_path:
                 return None
             return {
+                'offer_id': response.get('offer_id'),
                 'agnostic_path': agnostic_path,
                 'source_kind': response.get('source_kind', self.SOURCE_RUNMANAGER),
             }
         if isinstance(response, (list, tuple)) and len(response) >= 2:
             return {
-                'agnostic_path': response[0],
+                'offer_id': response[0],
+                'agnostic_path': response[1],
                 'source_kind': (
-                    response[1] if len(response) >= 2 else self.SOURCE_RUNMANAGER
+                    response[2] if len(response) >= 3 else self.SOURCE_RUNMANAGER
                 ),
             }
         if isinstance(response, str):
             return {
+                'offer_id': None,
                 'agnostic_path': response,
                 'source_kind': self.SOURCE_RUNMANAGER,
             }
@@ -683,6 +691,15 @@ class QueueManager(object):
         if os.path.exists(candidate):
             return os.path.abspath(candidate)
         return os.path.abspath(path_to_local(candidate))
+
+    def _acknowledge_remote_offer(self, offer_id, valid):
+        if offer_id is None:
+            self._logger.warning(
+                'Runmanager offer missing offer_id; proceeding without receipt acknowledgement'
+            )
+            return
+        client = self._get_runmanager_client()
+        client.request('queue_ack_received', offer_id, valid=valid)
 
     def _request_next_from_runmanager(self):
         try:
@@ -701,6 +718,13 @@ class QueueManager(object):
         path = self._path_from_offer(offer['agnostic_path'])
         result, message = self._validate_connection_table(path)
         if not result:
+            try:
+                self._acknowledge_remote_offer(offer['offer_id'], False)
+            except Exception:
+                self._logger.exception(
+                    'Failed to reject invalid shot offer %r from runmanager',
+                    offer['offer_id'],
+                )
             self.manager_paused = True
             self.set_status('Rejected shot from runmanager\nQueue paused')
             self._logger.error(
@@ -709,6 +733,17 @@ class QueueManager(object):
                 message.strip(),
             )
             return None, 'invalid'
+
+        try:
+            self._acknowledge_remote_offer(offer['offer_id'], True)
+        except Exception:
+            if not self._runmanager_comm_error_logged:
+                self._logger.exception(
+                    'Failed to acknowledge runmanager shot offer %r',
+                    offer['offer_id'],
+                )
+                self._runmanager_comm_error_logged = True
+            return None, 'communication_error'
 
         offer['path'] = path
         return offer, 'ready'
@@ -730,22 +765,20 @@ class QueueManager(object):
         return {'path': path, 'source_kind': self.SOURCE_FALLBACK_REPEAT}
 
     def _get_next_shot(self):
+        override = self._pop_local_override()
+        if override:
+            return {'path': override, 'source_kind': self.SOURCE_LOCAL_OVERRIDE}
+
         offer, status = self._request_next_from_runmanager()
         if offer is not None:
             return offer
         if status == 'empty':
-            override = self._get_local_override_fallback()
-            if override:
-                return {'path': override, 'source_kind': self.SOURCE_LOCAL_OVERRIDE}
             fallback = self._get_fallback_repeat_shot('runmanager_empty')
             if fallback is not None:
                 return fallback
             self.set_status('Idle')
             return None
         if status == 'communication_error':
-            override = self._get_local_override_fallback()
-            if override:
-                return {'path': override, 'source_kind': self.SOURCE_LOCAL_OVERRIDE}
             fallback = self._get_fallback_repeat_shot('runmanager_comm_error')
             if fallback is not None:
                 return fallback
