@@ -1,12 +1,11 @@
 Introduction
 ============
 
-BLACS interfaces with the hardware devices controlling an experiment, and executes the
-shots prepared for the apparatus. Runmanager owns the authoritative queue of shots and
-offers them to BLACS when BLACS becomes idle. BLACS has two modes of operation: the
+BLACS interfaces with the hardware devices controlling an experiment, and manages the
+queue of shots to execute on the apparatus. BLACS has two modes of operation: the
 execution of shots under hardware timing, and the manual control of hardware devices (by
 the user) via the BLACS GUI. The interface is shown in :numref:`fig-overview` and is split into two
-sections that align with the two modes of operation: shot-execution controls, and a
+sections that align with the two modes of operation: the queue of shots to execute, and a
 GUI interface for manually controlling the output state of the hardware devices when not
 running shots (which can be useful for manual debugging of an apparatus).
 
@@ -14,15 +13,14 @@ running shots (which can be useful for manual debugging of an apparatus).
 
 .. figure:: img/blacs_overview.png
 
-    The BLACS interface. Left: Shot-execution controls. Main: A set of tabs (one for each hardware device) that 
+    The BLACS interface. Left: The shot queue. Main: A set of tabs (one for each hardware device) that 
     provide a manual control interface
     for each device. Further details on the BLACS interface can be found in :doc:`usage`.
 
-The shot-execution controls allow BLACS to pause execution, abort the current shot,
-enable fallback repeat of the last completed shot, inspect the current executor status,
-load a single local override shot directly, and monitor how many completed shots are
-buffered for notification back to runmanager. Runmanager, not BLACS, handles queued
-shot management and submission of completed shots to lyse.
+The shot queue contains standard controls for adding deleting and reordering shots. The
+queue can also be paused or put into one of several modes that repeat the shots in the queue.
+When a shot finishes, and the results have been saved to the hdf5 file, the shot may be
+optionally sent to the lyse server specified in the GUI.
 
 The GUI for each hardware device is dynamically generated at runtime, based on a
 connection table written using the labscript API. A device tab is created for each device, and

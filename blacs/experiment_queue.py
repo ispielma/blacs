@@ -154,12 +154,7 @@ class QueueManager(object):
 
         self._logger = logging.getLogger('BLACS.ShotExecutor')
         self._runmanager_client = None
-        self._runmanager_notify_client = None
         self._runmanager_comm_error_logged = False
-        self._runmanager_notify_error_logged = False
-        self._pending_completion_notifications = []
-        self._pending_completion_notifications_lock = threading.Lock()
-        self._completion_buffer_signal_queue = queue.Queue()
 
         self._ui.queue_pause_button.toggled.connect(self._toggle_pause)
         self._ui.queue_repeat_button.toggled.connect(self._toggle_repeat)
@@ -190,16 +185,10 @@ class QueueManager(object):
         )
         self.manager_repeat_mode = self.REPEAT_LAST
         self._sync_local_override_widgets()
-        self._update_notify_buffer_count()
 
         self.manager = threading.Thread(target=self.manage)
         self.manager.daemon = True
         self.manager.start()
-        self._completion_notifier = threading.Thread(
-            target=self._completion_notification_mainloop
-        )
-        self._completion_notifier.daemon = True
-        self._completion_notifier.start()
 
     def get_save_data(self):
         return {
@@ -221,16 +210,13 @@ class QueueManager(object):
             self.last_opened_shots_folder = data['last_opened_shots_folder']
         if 'local_override_path' in data and data['local_override_path']:
             self.process_request(str(data['local_override_path']))
+
         legacy_files = list(data.get('files_queued', []))
         if legacy_files:
             self._logger.info(
                 'Dropping restored BLACS queue contents and keeping only the first legacy shot as a local override'
             )
             self.process_request(str(legacy_files[0]))
-        if data.get('pending_completion_notifications'):
-            self._logger.info(
-                'Dropping restored completed-shot notification buffer; BLACS no longer persists it across restarts'
-            )
 
     @property
     @inmain_decorator(True)
@@ -241,11 +227,6 @@ class QueueManager(object):
     @inmain_decorator(True)
     def manager_running(self, value):
         self._manager_running = bool(value)
-        if not self._manager_running:
-            try:
-                self._completion_buffer_signal_queue.put(['close', None])
-            except Exception:
-                pass
 
     def _toggle_pause(self, checked):
         self.manager_paused = checked
@@ -527,132 +508,6 @@ class QueueManager(object):
         if self._runmanager_client is None:
             self._runmanager_client = runmanager_remote.Client()
         return self._runmanager_client
-
-    def _get_runmanager_notify_client(self):
-        if runmanager_remote is None:
-            raise RuntimeError('runmanager.remote is unavailable')
-        if self._runmanager_notify_client is None:
-            base_client = self._get_runmanager_client()
-            timeout = getattr(base_client, 'timeout', 1) or 1
-            timeout = min(timeout, 1)
-            self._runmanager_notify_client = runmanager_remote.Client(
-                host=base_client.host,
-                port=base_client.port,
-                timeout=timeout,
-            )
-        return self._runmanager_notify_client
-
-    def _normalise_completion_notification_path(self, h5_filepath):
-        path = str(h5_filepath).strip()
-        if not path:
-            return None
-        if os.path.exists(path):
-            path = os.path.abspath(path)
-            return path_to_agnostic(path)
-        return path
-
-    def get_pending_completion_notifications(self):
-        with self._pending_completion_notifications_lock:
-            return list(self._pending_completion_notifications)
-
-    def restore_pending_completion_notifications(self, paths):
-        restored_paths = []
-        for path in list(paths or []):
-            try:
-                normalised = self._normalise_completion_notification_path(path)
-            except Exception:
-                self._logger.exception(
-                    'Failed to restore pending completion notification %s', path
-                )
-                continue
-            if normalised:
-                restored_paths.append(normalised)
-        with self._pending_completion_notifications_lock:
-            self._pending_completion_notifications = restored_paths
-        self._update_notify_buffer_count()
-        self._completion_buffer_signal_queue.put(['retry', None])
-
-    @inmain_decorator(True)
-    def _update_notify_buffer_count(self):
-        count = len(self.get_pending_completion_notifications())
-        text = 'Runmanager notify buffer: %d' % count
-        self._ui.runmanager_notify_buffer_label.setText(text)
-        self._ui.runmanager_notify_buffer_label.setToolTip(text)
-
-    def _flush_pending_completion_notifications(self):
-        while True:
-            with self._pending_completion_notifications_lock:
-                if not self._pending_completion_notifications:
-                    break
-                agnostic_path = self._pending_completion_notifications[0]
-
-            try:
-                self._get_runmanager_notify_client().notify_shot_complete(agnostic_path)
-            except Exception:
-                if not self._runmanager_notify_error_logged:
-                    self._logger.exception(
-                        'Failed to notify runmanager that shot %s completed',
-                        agnostic_path,
-                    )
-                    self._runmanager_notify_error_logged = True
-                return False
-
-            with self._pending_completion_notifications_lock:
-                if (
-                    self._pending_completion_notifications
-                    and self._pending_completion_notifications[0] == agnostic_path
-                ):
-                    self._pending_completion_notifications.pop(0)
-                else:
-                    try:
-                        self._pending_completion_notifications.remove(agnostic_path)
-                    except ValueError:
-                        pass
-            self._runmanager_notify_error_logged = False
-            self._update_notify_buffer_count()
-        return True
-
-    def _completion_notification_mainloop(self):
-        logger = logging.getLogger('BLACS.runmanager_notify_buffer')
-        while self.manager_running:
-            timeout = 1 if self.get_pending_completion_notifications() else 10
-            try:
-                try:
-                    signal, data = self._completion_buffer_signal_queue.get(
-                        timeout=timeout
-                    )
-                except queue.Empty:
-                    signal, data = 'retry', None
-
-                if signal == 'retry':
-                    if self.get_pending_completion_notifications():
-                        self._flush_pending_completion_notifications()
-                elif signal == 'close':
-                    break
-                else:
-                    raise ValueError('Invalid signal: %s' % str(signal))
-            except Exception:
-                logger.exception(
-                    'Exception in runmanager notification buffer mainloop, continuing'
-                )
-        logger.info('Stopping runmanager notification buffer')
-
-    def _notify_shot_complete(self, h5_filepath):
-        try:
-            agnostic_path = self._normalise_completion_notification_path(h5_filepath)
-        except Exception:
-            self._logger.exception(
-                'Failed to convert completed shot path %s to agnostic form',
-                h5_filepath,
-            )
-            return False
-        if not agnostic_path:
-            return False
-        with self._pending_completion_notifications_lock:
-            self._pending_completion_notifications.append(agnostic_path)
-        self._update_notify_buffer_count()
-        self._completion_buffer_signal_queue.put(['retry', None])
-        return True
 
     def _normalise_runmanager_offer(self, response):
         if response in (None, False, ''):
@@ -1206,17 +1061,17 @@ class QueueManager(object):
 
             logger.info('All devices are back in static mode.')
 
-            send_completion_notification = True
+            send_to_analysis = True
             for callback in plugins.get_callbacks('analysis_cancel_send'):
                 try:
                     if callback(path):
-                        send_completion_notification = False
+                        send_to_analysis = False
                         break
                 except Exception:
                     logger.exception('Plugin callback raised an exception')
 
-            if send_completion_notification:
-                self._notify_shot_complete(path)
+            if send_to_analysis:
+                self.BLACS.analysis_submission.get_queue().put(['file', path])
 
             for callback in plugins.get_callbacks('shot_complete'):
                 try:

@@ -99,6 +99,8 @@ from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 # Lab config code
 from labscript_utils.labconfig import LabConfig
 from labscript_profile import hostname
+# Analysis Submission code
+from blacs.analysis_submission import AnalysisSubmission
 # Shot executor code
 from blacs.experiment_queue import QueueManager, QueueTreeview
 # Module containing hardware compatibility:
@@ -285,6 +287,16 @@ class BLACS(object):
 
         logger.info('reordering tabs')
         self.order_tabs(tab_data)
+
+        splash.update_text("initialising analysis submission")
+        logger.info('starting analysis submission thread')
+        # setup analysis submission
+        self.analysis_submission = AnalysisSubmission(self,self.ui)
+        if 'analysis_data' not in tab_data['BLACS settings']:
+            tab_data['BLACS settings']['analysis_data'] = {}
+        else:
+            tab_data['BLACS settings']['analysis_data'] = eval(tab_data['BLACS settings']['analysis_data'])
+        self.analysis_submission.restore_save_data(tab_data['BLACS settings']["analysis_data"])
 
         splash.update_text("starting shot executor")
         logger.info('starting shot executor thread')
@@ -510,7 +522,7 @@ class BLACS(object):
                     # TODO: Warn that this will restore values, but not channels that are locked
                     message = QMessageBox()
                     message.setText("""Warning: This will modify front panel values and cause device output values to update.
-                    \nThe queue will be cleared.
+                    \nThe queue and files waiting to be sent for analysis will be cleared.
                     \n
                     \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?""")
                     message.setIcon(QMessageBox.Warning)
@@ -537,6 +549,12 @@ class BLACS(object):
                             except NameError:
                                 tab_data['BLACS settings']['queue_data'] = {}
                         self.queue.restore_save_data(tab_data['BLACS settings']['queue_data'])
+                        # restore analysis data
+                        if 'analysis_data' not in tab_data['BLACS settings']:
+                            tab_data['BLACS settings']['analysis_data'] = {}
+                        else:
+                            tab_data['BLACS settings']['analysis_data'] = eval(tab_data['BLACS settings']['analysis_data'])
+                        self.analysis_submission.restore_save_data(tab_data['BLACS settings']["analysis_data"])
                 except Exception as e:
                     logger.exception("Unable to load the front panel in %s."%(filepath))
                     message = QMessageBox()
@@ -687,6 +705,7 @@ if __name__ == '__main__':
                                       'queue',
                                       'notifications',
                                       'connections',
+                                      'analysis_submission',
                                       'settings',
                                       'front_panel_settings',
                                       'labscript_utils.h5_lock',
@@ -700,7 +719,7 @@ if __name__ == '__main__':
         "default": ["apparatus_name", "app_saved_configs"],
         "programs": ["text_editor", "text_editor_arguments",],
         "paths": ["shared_drive", "connection_table_h5", "connection_table_py",],
-        "ports": ["blacs"],
+        "ports": ["blacs", "lyse"],
     }
     exp_config = LabConfig(required_params=required_config_params)
     settings_dir = Path(exp_config.get('default', 'app_saved_configs'), 'blacs')

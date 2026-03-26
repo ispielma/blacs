@@ -308,19 +308,9 @@ QToolButton:hover:checked {
                   </widget>
                  </item>
                  <item>
-                 <widget class="QLabel" name="running_shot_name">
+                  <widget class="QLabel" name="running_shot_name">
                    <property name="text">
                     <string>&lt;b&gt;[running_shot.h5]&lt;/b&gt;</string>
-                   </property>
-                   <property name="alignment">
-                    <set>Qt::AlignCenter</set>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QLabel" name="runmanager_notify_buffer_label">
-                   <property name="text">
-                    <string>Runmanager notify buffer: 0</string>
                    </property>
                    <property name="alignment">
                     <set>Qt::AlignCenter</set>
@@ -399,6 +389,9 @@ QToolButton:hover:checked {
                  </item>
                 </layout>
                </widget>
+              </item>
+              <item>
+               <layout class="QVBoxLayout" name="analysis"/>
               </item>
              </layout>
             </item>
