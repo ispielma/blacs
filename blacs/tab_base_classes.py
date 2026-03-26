@@ -25,7 +25,7 @@ from types import GeneratorType
 from bisect import insort
 
 from qtutils.qt.QtCore import Qt, QTimer
-from qtutils.qt.QtGui import QIcon, QColor
+from qtutils.qt.QtGui import QIcon, QColor, QPalette
 from qtutils.qt.QtWidgets import QLabel, QWidget, QPushButton, QApplication, QVBoxLayout
 
 from qtutils import inmain_decorator, inmain, inthread, UiLoader
@@ -261,6 +261,8 @@ class Tab(object):
 
         # Load the UI
         self._ui = UiLoader().load(os.path.join(BLACS_DIR, 'tab_frame.ui'))
+        # set tab text color from palette to respect OS theme changes
+        self._tab_text_colour = self._ui.palette().color(QPalette.ColorRole.Text)
         self._layout = self._ui.device_layout
         self._device_widget = self._ui.device_controls
         self._changed_widget = self._ui.changed_widget
@@ -404,7 +406,7 @@ class Tab(object):
         self._ui.error_message.setHtml(prefix+self._not_responding_error_message+self._error+suffix)
         if self._error or self._not_responding_error_message:
             self._ui.notresponding.show()
-            self._tab_text_colour = 'red'
+            self._tab_text_colour = QColor('red')
             if self.error_message:
                 if self.state == 'fatal error':
                     self._tab_icon = self.ICON_FATAL_ERROR
@@ -412,7 +414,8 @@ class Tab(object):
                     self._tab_icon = self.ICON_ERROR
         else:
             self._ui.notresponding.hide()
-            self._tab_text_colour = 'black'
+            # set tab text color from palette to respect OS theme changes
+            self._tab_text_colour = self._ui.palette().color(QPalette.ColorRole.Text)
             if self.state == 'idle':
                 self._tab_icon = self.ICON_OK
             else:
@@ -433,7 +436,7 @@ class Tab(object):
                 return
             icon = QIcon(self._tab_icon)
             self.notebook.tabBar().setTabIcon(currentpage, icon)
-            self.notebook.tabBar().setTabTextColor(currentpage, QColor(self._tab_text_colour))
+            self.notebook.tabBar().setTabTextColor(currentpage, self._tab_text_colour)
     
     def get_tab_layout(self):
         return self._layout
@@ -1242,7 +1245,7 @@ if __name__ == '__main__':
     
     window.show()
     def run():
-        app.exec_()
+        app.exec()
         tab1.close_tab()
         tab2.close_tab()
     sys.exit(run())

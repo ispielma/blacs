@@ -957,18 +957,20 @@ if __name__ == '__main__':
         def __init__(self,*args,**kwargs):
             QWidget.__init__(self,*args,**kwargs)
             self.are_we_closed = False
+            self.my_tabs = []
         
         def closeEvent(self,event):
             if not self.are_we_closed:        
                 event.ignore()
-                self.my_tab.close_tab()
+                for tab in self.my_tabs:
+                    tab.close_tab()
                 self.are_we_closed = True
                 QTimer.singleShot(1000,self.close)
             else:
                 event.accept()
     
         def add_my_tab(self,tab):
-            self.my_tab = tab
+            self.my_tabs.append(tab)
     
     app = QApplication(sys.argv)
     window = MyWindow()
@@ -979,8 +981,9 @@ if __name__ == '__main__':
     tab1 = MyDAQTab(notebook,settings = {'device_name': 'ni_pcie_6363_0', 'connection_table':connection_table})
     tab2 = MyDummyTab(notebook,settings = {'device_name': 'intermediate_device', 'connection_table':connection_table})
     window.add_my_tab(tab1)
+    window.add_my_tab(tab2)
     window.show()
     def run():
-        app.exec_()
+        app.exec()
         
     sys.exit(run())
