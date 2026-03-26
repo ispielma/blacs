@@ -101,7 +101,7 @@ from labscript_utils.labconfig import LabConfig
 from labscript_profile import hostname
 # Analysis Submission code
 from blacs.analysis_submission import AnalysisSubmission
-# Shot executor code
+# Queue Manager Code
 from blacs.experiment_queue import QueueManager, QueueTreeview
 # Module containing hardware compatibility:
 from labscript_utils import device_registry
@@ -297,9 +297,9 @@ class BLACS(object):
             tab_data['BLACS settings']['analysis_data'] = eval(tab_data['BLACS settings']['analysis_data'])
         self.analysis_submission.restore_save_data(tab_data['BLACS settings']["analysis_data"])
 
-        splash.update_text("starting shot executor")
-        logger.info('starting shot executor thread')
-        # Setup the BLACS shot executor
+        splash.update_text("starting queue manager")
+        logger.info('starting queue manager thread')
+        # Setup the QueueManager
         self.queue = QueueManager(self,self.ui)
         if 'queue_data' not in tab_data['BLACS settings']:
             tab_data['BLACS settings']['queue_data'] = {}
@@ -662,14 +662,14 @@ class BLACS(object):
 
 class ExperimentServer(ZMQServer):
     def handler(self, h5_filepath):
+        print(h5_filepath)
         message = self.process(h5_filepath)
         logger.info('Request handler: %s ' % message.strip())
         return message
 
     @inmain_decorator(wait_for_return=True)
     def process(self,h5_filepath):
-        # Legacy compatibility path: remote submissions become a single local
-        # override shot rather than entering a BLACS-owned queue.
+        # Convert path to local slashes and shared drive prefix:
         logger.info('received filepath: %s'%h5_filepath)
         h5_filepath = labscript_utils.shared_drive.path_to_local(h5_filepath)
         logger.info('local filepath: %s'%h5_filepath)

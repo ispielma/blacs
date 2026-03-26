@@ -88,7 +88,6 @@ class Plugin(object):
         
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
-        self.executor = self.BLACS['experiment_queue']
         self.ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'controls.ui'))
         self.bar = self.ui.bar
         self.style = QtWidgets.QStyleFactory.create('Fusion')
@@ -105,7 +104,7 @@ class Plugin(object):
         BLACS['ui'].queue_status_verticalLayout.insertWidget(0, self.ui)
         # We need to know the name of the master pseudoclock so we can look up
         # the duration of each shot:
-        self.master_pseudoclock = self.executor.master_pseudoclock
+        self.master_pseudoclock = self.BLACS['experiment_queue'].master_pseudoclock
 
         # Check if the wait monitor device, if any, supports wait completed events:
         with h5py.File(self.BLACS['connection_table_h5file'], 'r') as f:
