@@ -697,13 +697,13 @@ if __name__ == '__main__':
 
     splash.update_text('loading labconfig')
     required_config_params = {
-        "DEFAULT": ["apparatus_name", "app_saved_configs"],
+        "default": ["apparatus_name", "app_saved_configs"],
         "programs": ["text_editor", "text_editor_arguments",],
         "paths": ["shared_drive", "connection_table_h5", "connection_table_py",],
         "ports": ["blacs"],
     }
     exp_config = LabConfig(required_params=required_config_params)
-    settings_dir = Path(exp_config.get('DEFAULT', 'app_saved_configs'), 'blacs')
+    settings_dir = Path(exp_config.get('default', 'app_saved_configs'), 'blacs')
     if not settings_dir.exists():
         os.makedirs(settings_dir, exist_ok=True)
     settings_path = str(settings_dir / f'{hostname()}_BLACS.h5')
