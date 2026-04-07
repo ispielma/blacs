@@ -97,7 +97,7 @@ from labscript_utils.connections import ConnectionTable
 #Draggable Tab Widget Code
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 # Lab config code
-from labscript_utils.labconfig import LabConfig
+from labscript_utils.labconfig import LabConfig, LabscriptApplication
 from labscript_profile import hostname
 # Shot executor code
 from blacs.experiment_queue import QueueManager, QueueTreeview
@@ -162,7 +162,7 @@ class BLACSWindow(QMainWindow):
         return super().changeEvent(event)
 
 
-class BLACS(object):
+class BLACS(LabscriptApplication):
 
     tab_widget_ids = 7
 
@@ -182,9 +182,11 @@ class BLACS(object):
         self.ui = loader.load(os.path.join(BLACS_DIR, 'main.ui'), BLACSWindow())
         logger.info('BLACS ui loaded')
         self.ui.blacs=self
+        self.init_config_window_title()
         self.tab_widgets = {}
         self.exp_config = exp_config # Global variable
         self.settings_path = settings_path # Global variable
+        self.set_config_window_title(self.settings_path)
         self.connection_table = connection_table # Global variable
         self.connection_table_h5file = self.exp_config.get('paths','connection_table_h5')
         self.connection_table_labscript = self.exp_config.get('paths','connection_table_py')
