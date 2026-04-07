@@ -415,7 +415,6 @@ class ShotExecutor(object):
                         timeout=self.BLACS.exp_config.getfloat(
                             'timeouts', 'communication_timeout', fallback=60
                         ),
-                        update_status=False,
                     )
                     requested_from_runmanager = bool(agnostic_path)
                     runmanager_failed = not request_succeeded
