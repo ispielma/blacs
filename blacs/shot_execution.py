@@ -220,7 +220,7 @@ class ShotExecutor(object):
                 self.failure_reason = str(exc)
                 self.runmanager_online = 'offline'
             if update_status and not getattr(self, error_logged_attr):
-                self._logger.info(unavailable_message, exc)
+                self._logger.warning(unavailable_message, exc)
                 setattr(self, error_logged_attr, True)
             return False, None
 
