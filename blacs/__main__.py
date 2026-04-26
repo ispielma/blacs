@@ -255,13 +255,41 @@ class BLACS(LabscriptApplication):
 
         logger.info('creating plugin tabs')
         # setup the plugin tabs
-        plugins.manager.create_tabs(
-            self.tab_widgets[0],
-            self.settings_dict,
-            self.tablist,
-            settings,
-            tab_data,
-        )
+        for module_name, plugin in self.plugins.items():
+            try:
+                if hasattr(plugin, 'get_tab_classes'):
+                    logger.warning(
+                        "Plugin '%s' is using deprecated BLACS-only tab hooks "
+                        "get_tab_classes()/tabs_created(). These hooks remain "
+                        "supported for compatibility, but new UI integration "
+                        "should use application-owned plugin contexts instead.",
+                        module_name,
+                    )
+                    tab_dict = {}
+
+                    for tab_name, TabClass in plugin.get_tab_classes().items():
+                        settings_key = "{}: {}".format(module_name, tab_name)
+                        self.settings_dict.setdefault(settings_key, {"tab_name": tab_name})
+                        self.settings_dict[settings_key]["front_panel_settings"] = (
+                            settings[settings_key] if settings_key in settings else {}
+                        )
+                        self.settings_dict[settings_key]["saved_data"] = (
+                            tab_data[settings_key]['data'] if settings_key in tab_data else {}
+                        )
+
+                        self.tablist[settings_key] = TabClass(
+                            self.tab_widgets[0],
+                            self.settings_dict[settings_key],
+                        )
+                        tab_dict[tab_name] = self.tablist[settings_key]
+
+                    if hasattr(plugin, 'tabs_created'):
+                        plugin.tabs_created(tab_dict)
+
+            except Exception:
+                logger.exception(
+                    "Could not instantiate tab for plugin '%s'. Skipping" % module_name
+                )
 
         logger.info('reordering tabs')
         self.order_tabs(tab_data)
