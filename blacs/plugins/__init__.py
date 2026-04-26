@@ -32,8 +32,8 @@ PLUGIN_CONFIG_SECTION = 'blacs/plugins'
 
 
 def get_callbacks(name):
-    """Return all the callbacks for a particular name, in order of priority"""
-    return manager.get_callbacks(name)
+    """Return all the callbacks for a particular name, in order of priority."""
+    return manager.get_event_handlers(name)
 
 
 exp_config = LabConfig()
