@@ -313,6 +313,13 @@ class BLACS(object):
         for module_name, plugin in self.plugins.items():
             try:
                 if hasattr(plugin, 'get_tab_classes'):
+                    logger.warning(
+                        "Plugin '%s' is using deprecated BLACS-only tab hooks "
+                        "get_tab_classes()/tabs_created(). These hooks remain "
+                        "supported for compatibility, but new UI integration "
+                        "should use application-owned plugin contexts instead.",
+                        module_name,
+                    )
                     tab_dict = {}
 
                     for tab_name, TabClass in plugin.get_tab_classes().items():
