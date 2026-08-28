@@ -224,25 +224,37 @@ class ShotExecutor(object):
                 setattr(self, error_logged_attr, True)
             return False, None
 
+    def report_shot_outcome(self, path, status, message=''):
+        """Tell runmanager how a shot turned out.
+
+        Queued for the notifier thread, which retries until it gets through, so
+        an outcome is not lost to a momentary runmanager outage."""
+        if path is None:
+            return
+        self.completed_shots.put((path_to_agnostic(path), status, message))
+
     def notify_runmanager_of_completed_shots(self):
-        pending_agnostic_path = None
+        pending_outcome = None
         while self.manager_running:
-            if pending_agnostic_path is None:
+            if pending_outcome is None:
                 try:
-                    pending_agnostic_path = self.completed_shots.get(timeout=1)
+                    pending_outcome = self.completed_shots.get(timeout=1)
                 except queue.Empty:
                     continue
 
+            agnostic_path, status, message = pending_outcome
             success, _ = self.runmanager_rpc(
                 '_runmanager_notify_client',
                 '_runmanager_notify_error_logged',
                 'notify_shot_complete',
-                'Runmanager unavailable while reporting shot completion: %s',
-                pending_agnostic_path,
+                'Runmanager unavailable while reporting a shot outcome: %s',
+                agnostic_path,
+                status,
+                message,
                 update_status=False,
             )
             if success:
-                pending_agnostic_path = None
+                pending_outcome = None
             else:
                 time.sleep(1)
     
@@ -440,9 +452,34 @@ class ShotExecutor(object):
                     continue
 
                 path, message = self.process_request(path_to_local(str(agnostic_path)))
+                if path is not None and requested_from_runmanager:
+                    # Tell runmanager we have taken it, before running it and
+                    # before asking for another. Runmanager treats a shot still
+                    # unacknowledged when we ask again as one that never
+                    # arrived, and offers it afresh. Report the path we will
+                    # actually run: process_request may have made a re-run copy.
+                    self.runmanager_rpc(
+                        '_runmanager_request_client',
+                        '_runmanager_request_error_logged',
+                        'shot_accepted',
+                        'Runmanager unavailable while accepting a shot: %s',
+                        agnostic_path,
+                        path_to_agnostic(path),
+                        update_status=False,
+                    )
                 if path is None:
                     logger.error(message.strip())
                     if requested_from_runmanager:
+                        # Tell runmanager not to offer this one again.
+                        self.runmanager_rpc(
+                            '_runmanager_request_client',
+                            '_runmanager_request_error_logged',
+                            'shot_rejected',
+                            'Runmanager unavailable while rejecting a shot: %s',
+                            agnostic_path,
+                            message.strip(),
+                            update_status=False,
+                        )
                         self.manager_paused = True
                         self.set_status("Rejected shot from runmanager\nExecution paused")
                     elif runmanager_failed:
@@ -588,19 +625,29 @@ class ShotExecutor(object):
 
                 # Handle if we broke out of loop due to timeout or error:
                 if timed_out or error_condition or abort or restarted:
-                    # Pause shot execution and set a status message.
-                    # only if we aren't responding to an abort click
-                    if not abort:
-                        self.manager_paused = True
+                    # Pause shot execution and set a status message. Any shot
+                    # that did not complete pauses execution, including an
+                    # abort, so that runmanager decides whether the shot is
+                    # queued again before we ask for another one.
+                    outcome_path = path
+                    self.manager_paused = True
                     if timed_out:
                         self.set_status("Programming timed out\nExecution paused")
+                        self.report_shot_outcome(
+                            outcome_path, 'failed', 'Programming timed out')
                     elif abort:
-                        self.set_status("Aborted")
+                        self.set_status("Aborted\nExecution paused")
                         path = None
+                        self.report_shot_outcome(outcome_path, 'aborted', 'Aborted')
                     elif restarted:
                         self.set_status("Device restarted in transition to\nbuffered. Aborted. Execution paused.")
+                        self.report_shot_outcome(
+                            outcome_path, 'failed',
+                            'Device restarted while transitioning to buffered')
                     else:
                         self.set_status("Device(s) in error state\nExecution paused")
+                        self.report_shot_outcome(
+                            outcome_path, 'failed', 'Device(s) in error state')
                         
                     # Abort the run for all devices in use:
                     # Recreate the notification queue here because we don't want
@@ -622,6 +669,9 @@ class ShotExecutor(object):
                     inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                     inmain(self._ui.shot_abort_button.setEnabled,False)
                     
+                    # Runmanager owns the queue and decides what happens to a
+                    # shot we could not run, so do not hold on to it here:
+                    path = None
                     # Start a new iteration
                     continue
                 
@@ -695,11 +745,20 @@ class ShotExecutor(object):
                 if restarted:                    
                     self.manager_paused = True
                     self.set_status("Device restarted during run.\nAborted. Execution paused")
+                    self.report_shot_outcome(
+                        path, 'failed', 'Device restarted during the run')
                 elif abort:
-                    self.set_status("Aborted")
+                    # Pause as for any other shot that did not complete, so
+                    # runmanager decides whether it goes back in the queue:
+                    self.manager_paused = True
+                    self.set_status("Aborted\nExecution paused")
+                    self.report_shot_outcome(path, 'aborted', 'Aborted')
                     path = None
                     
                 if abort or restarted:
+                    # Runmanager owns the queue and decides what happens to a
+                    # shot we could not run, so do not hold on to it here:
+                    path = None
                     # after disabling the abort button, we now start a new iteration
                     continue                
                 
@@ -708,6 +767,8 @@ class ShotExecutor(object):
             # End try/except block here
             except Exception:
                 logger.exception("Error in shot execution. Execution paused.")
+                # Capture before the cleanup below, which may rename the file:
+                outcome_path = path
 
                 # Raise the error in a thread for visibility
                 zprocess.raise_exception_in_thread(sys.exc_info())
@@ -732,11 +793,16 @@ class ShotExecutor(object):
                 # Need to put devices back in manual mode
                 self._abort_buffered_devices(devices_in_use, restart_function)
                 self.set_status("Error in shot execution\nExecution paused")
+                self.report_shot_outcome(
+                    outcome_path, 'failed', 'Error in shot execution')
 
                 # disconnect and disable abort button
                 inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                 inmain(self._ui.shot_abort_button.setEnabled,False)
                 
+                # Runmanager owns the queue and decides what happens to a
+                # shot we could not run, so do not hold on to it here:
+                path = None
                 # Start a new iteration
                 continue
                              
@@ -840,6 +906,8 @@ class ShotExecutor(object):
                 zprocess.raise_exception_in_thread(sys.exc_info())
                 
             if error_condition:                
+                # Capture before the cleanup below, which may rename the file:
+                outcome_path = path
                 # clean up the h5 file
                 self.manager_paused = True
                 # is this a repeat?
@@ -857,7 +925,13 @@ class ShotExecutor(object):
                     logger.warning(msg, exc_info=True)
                     shutil.move(temp_path, path.replace('.h5','_retry.h5'))
                     path = path.replace('.h5','_retry.h5')
-                
+
+                self.report_shot_outcome(
+                    outcome_path, 'failed',
+                    'Device(s) reported an error after the run')
+                # Runmanager owns the queue and decides what happens to a
+                # shot we could not run, so do not hold on to it here:
+                path = None
                 continue
             
             ##########################################################################################################################################
@@ -865,7 +939,7 @@ class ShotExecutor(object):
             ########################################################################################################################################## 
             logger.info('All devices are back in static mode.')  
 
-            self.completed_shots.put(path_to_agnostic(path))
+            self.report_shot_outcome(path, 'completed')
 
             ##########################################################################################################################################
             #                                                        Plugin callbacks                                                                #
