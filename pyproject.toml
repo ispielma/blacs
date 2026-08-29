@@ -49,7 +49,7 @@ Tracker = "https://github.com/labscript-suite/blacs/issues/"
 
 [project.optional-dependencies]
 docs = [
-    "PyQt5",
+    "PyQt6",
     "Sphinx==8.2.3",
     "sphinx-rtd-theme==3.0.2",
     "myst_parser==4.0.1",
