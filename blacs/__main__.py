@@ -143,10 +143,8 @@ class BLACSWindow(QMainWindow):
 
     def changeEvent(self, event):
         
-        # theme update only for PySide6/PyQt6
-        if (QT_ENV.endswith('6')
-            and (event.type() == QEvent.Type.ApplicationPaletteChange
-            or event.type() == QEvent.Type.StyleChange)):
+        if (event.type() == QEvent.Type.ApplicationPaletteChange
+                or event.type() == QEvent.Type.StyleChange):
 
             for widget in self.findChildren(QWidget):
                 # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
