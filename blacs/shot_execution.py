@@ -458,7 +458,15 @@ class ShotExecutor(object):
                     # unacknowledged when we ask again as one that never
                     # arrived, and offers it afresh. Report the path we will
                     # actually run: process_request may have made a re-run copy.
-                    self.runmanager_rpc(
+                    #
+                    # Runmanager recording this is a precondition for running
+                    # the shot. If it did not, the shot is still unacknowledged
+                    # there and will be offered again, so running it here would
+                    # run it twice. Not running it costs one poll and no data,
+                    # and there is nothing to lose by waiting: the shot came
+                    # from runmanager, so if runmanager cannot be reached there
+                    # is no queued shot to run anyway.
+                    reached, recorded = self.runmanager_rpc(
                         '_runmanager_request_client',
                         '_runmanager_request_error_logged',
                         'shot_accepted',
@@ -467,11 +475,26 @@ class ShotExecutor(object):
                         path_to_agnostic(path),
                         update_status=False,
                     )
+                    if not (reached and recorded):
+                        logger.warning(
+                            'Runmanager did not record that we took %s, so it '
+                            'is not being run here; it will be offered again.',
+                            path,
+                        )
+                        path = None
+                        self.set_status(
+                            "Runmanager did not confirm the shot\nWaiting"
+                        )
+                        continue
                 if path is None:
                     logger.error(message.strip())
                     if requested_from_runmanager:
                         # Tell runmanager not to offer this one again.
-                        self.runmanager_rpc(
+                        # Retrying this on the notifier thread would break the
+                        # ordering runmanager's reclaim rule depends on, so a
+                        # lost rejection is surfaced rather than resent: without
+                        # it runmanager offers the same unusable shot again.
+                        reached, recorded = self.runmanager_rpc(
                             '_runmanager_request_client',
                             '_runmanager_request_error_logged',
                             'shot_rejected',
@@ -480,6 +503,12 @@ class ShotExecutor(object):
                             message.strip(),
                             update_status=False,
                         )
+                        if not (reached and recorded):
+                            logger.warning(
+                                'Runmanager was not told that %s was rejected, '
+                                'so it may offer the same shot again.',
+                                agnostic_path,
+                            )
                         self.manager_paused = True
                         self.set_status("Rejected shot from runmanager\nExecution paused")
                     elif runmanager_failed:
