@@ -1,82 +1,150 @@
 Shot Management
 ===============
 
-The primary purpose of BLACS is to execute experiment shots on the lab apparatus. File
-paths to shots are typically received by BLACS over ZMQ, but can also be loaded directly
-through the BLACS GUI (either via the file menu, or by dragging and dropping onto the
-queue). Prior to accepting the shot, BLACS compares the connection table of the shot to the
-lab connection table and ensures that the shot is compatible with the current configuration of
-the laboratory hardware. Connection table compatibility requires that the shot connection
-table is a subset of the lab connection table. This ensures that old experiments can not be
-run on hardware that is no-longer configured correctly, preventing damage or unexpected
-results. Shots that pass this check are added to a queue, which is visible in the BLACS
-GUI (see :numref:`fig-queue`).
+The primary purpose of BLACS is to execute experiment shots on the lab
+apparatus. BLACS does not own a queue. Runmanager owns the authoritative shot
+queue and offers shots to BLACS one at a time, over ZMQ, when BLACS asks for
+one. Runmanager is also responsible for forwarding completed shots on to lyse.
 
-.. _fig-queue:
+Before running any shot, BLACS compares the shot's connection table with the
+laboratory connection table and verifies that the shot is compatible with the
+current hardware configuration. Compatibility requires the shot connection
+table to be a subset of the lab connection table. This ensures that old
+experiments cannot be run on hardware that is no longer configured to match,
+preventing damage or unexpected results.
 
-.. figure:: img/blacs_queuemanagement.png
+The BLACS shot-execution controls are a pause button, an abort button, a status
+display naming the running shot, a local override shot selector, and an
+indicator showing whether runmanager is responding.
 
-    The queue manager GUI within BLACS (with the device tabs hidden). (1)
-    The pause button stops the queue from processing new shots (a currently running shot
-    will finish). (2) The repeat button, when enabled, will duplicate a completed shot and
-    either place the duplicate at the bottom or the top of the queue (depending on the mode
-    selected). (3) The abort button immediately stops the execution of the current shot and
-    returns hardware to manual mode. (4-5) Buttons to add or delete selected shots from the
-    queue. (6) A button to clear the entire queue. (7-10) Buttons to reorder selected shots
-    within the queue. (11) The current status of the queue is displayed here. For example, the
-    status may indicate that devices are currently being programmed, the master pseudoclock
-    has been triggered and the experiment is running, or that acquired data is currently being
-    saved into the hdf5 shot file. (12) The list of shot files in the queue, in the order they
-    will be executed (the topmost is executed first). (13) A button to enable or disable the
-    forwarding of shots to lyse for analysis. (14) The network hostname of the PC running lyse.
+The queue itself lives in runmanager, along with the settings governing how
+shots are compiled, what happens to a shot that does not run, and what BLACS is
+given when the queue is empty. Queued shots are deleted there with the Delete
+key or the row context menu, rather than with a button, and the queue is
+cleared as a part of submitting a replacement batch. There is no reordering
+control and no repeat control: both belonged to the BLACS-owned queue and did
+not survive the move to runmanager. Anyone arriving from the upstream
+documentation will go looking for them.
 
-The queue is processed by a thread in BLACS, which we term the ‘queue manager’, that
-takes the top-most shot in the queue and, in turn, executes it. Shot execution follows the
-following pattern (a flowchart of this process is also shown in :numref:`fig-flowchart`):
+.. _blacs-runmanager-sync:
 
-#.  For each device in use in the shot, a message is sent to the corresponding device tab
-    state machine indicating that the device should program the device for hardware timed
-    execution of a shot. These messages are sent asynchronously, which ensures devices
-    program in parallel if possible (subject to the state machine being available to process
-    the message). Included in this message is the path to the hdf5 shot file, which each
-    device tab ultimately passes to a worker process that in turn, reads out the hardware
-    instructions and programs the hardware. During this programming, the device tab
-    enters the mode ‘transition_to_buffered’ (see §6.1.1.3).
-#.  The queue manager then waits until all devices have reported they have programmed,
-    at which point all device tabs in use should be in the ‘buffered’ state machine mode.
-    If a device does not report it has completed within a 5 minute timeout, or a device
-    reports an error has occurred during programming, the queue manager aborts the shot
-    by pausing the queue, instructing all device tabs to abort, and replacing the shot at
-    the top of the queue.
-#.  Provided all devices report they are ready, the queue manager proceeds with starting
-    the shot. This involves recording the current state of all manual controls (as these usually
-    affect the initial values of the shot and may affect results in certain experiments)
-    and then instructing the master pseudoclock to begin execution of the programmed
+Synchronising with runmanager
+-----------------------------
+
+Because the queue and the hardware live in different processes, a shot can be
+lost or run twice if the two disagree about who is holding it. The rules below
+are what prevent that. They are stated here because neither side can be read
+from the other's source, and changing one half without the other reintroduces
+exactly the failures they exist to close.
+
+**A shot is offered, then acknowledged, then run.** Runmanager hands BLACS a
+shot in reply to a request. BLACS then tells runmanager it has taken it,
+naming both the path runmanager offered and the path BLACS will actually run —
+these differ when the shot has already been run once and BLACS makes a fresh
+copy of it to re-run.
+
+**Acknowledgement is a precondition for running the shot, not a notification
+about it.** If runmanager does not confirm that it recorded the acknowledgement,
+BLACS does not run the shot. It releases it and asks again. This costs one poll
+cycle and no data: the shot came from runmanager in the first place, so if
+runmanager cannot be reached there is no queued shot to run anyway. Running it
+without a confirmed acknowledgement would run it twice, because runmanager will
+offer an unacknowledged shot again.
+
+**Acknowledgement is sent from the thread that asks for the next shot, before
+the shot runs.** This ordering is what makes runmanager's rule sound: a shot
+still unacknowledged when BLACS asks for another one cannot have reached BLACS,
+so runmanager returns it to the head of the queue. Moving the acknowledgement
+to another thread, or retrying it in the background, breaks that inference and
+must not be done — a background retry races the next request, which is the
+failure the ordering exists to prevent.
+
+**BLACS does not hold a shot it could not run.** Every terminal outcome —
+completion, abort, programming timeout, device error, device restart — releases
+the shot. BLACS never silently re-runs a shot on resume; runmanager decides
+whether a shot goes back in the queue, under its own failure policy.
+
+**Every outcome other than completion pauses execution**, an operator's abort
+included, so that decision is made before BLACS asks for another shot. Only a
+completed shot leads straight on to the next request.
+
+**Every terminal outcome is reported.** BLACS tells runmanager how each shot
+turned out — ``completed``, ``aborted`` or ``failed``, with a reason. Runmanager
+needs the outcome to retire the shot; a shot with no reported outcome has no
+terminal state there and its failure policy never runs on it.
+
+A BLACS that is killed, or that crashes outright, reports nothing, and the shot
+it held stays marked as running in runmanager indefinitely: runmanager only
+discards that record when it hands out the next shot, which will never happen.
+Clearing the queue in runmanager also clears the in-flight record, and is the
+way out of that state.
+
+**Outcomes are retried until they land, and named if they never do.** Outcomes
+are queued for a background thread that retries through a momentary runmanager
+outage. When BLACS closes, that thread gets a bounded grace period to finish
+delivering; anything still undelivered is written to the log at warning level,
+naming the shot, so an operator can put runmanager's record right by hand.
+
+Retrying outcomes in the background is safe only because of the pause rule.
+Runmanager discards a shot's in-flight record when it hands out the next one,
+so an outcome that arrives after BLACS has asked for another shot matches
+nothing, and the failure policy never runs on it — the shot is silently not
+re-queued. What prevents that is that every non-completion pauses execution, so
+BLACS does not ask for another shot until an operator resumes, and the notifier
+has as long as it needs. **Remove that pause and the failure policy starts
+missing shots**, quietly and only sometimes. The two rules are one mechanism.
+
+**Paths cross the boundary in shared-drive-agnostic form.** BLACS sends agnostic
+paths; runmanager converts them back to local paths before looking a shot up in
+its records. Both sides must agree on the ``shared_drive`` prefix in their
+labconfig. If they disagree, runmanager will not recognise the shots BLACS
+names, no acknowledgement will ever be recorded, and BLACS will decline every
+shot it is offered.
+
+The local override shot sits outside all of this. It is loaded from the BLACS
+GUI rather than offered by runmanager, so it is never acknowledged and
+runmanager has no queue record of it. Its outcome is still reported, with two
+consequences worth knowing. A completed override shot **is** forwarded to lyse,
+like any other completed shot, so a shot run from the BLACS GUI is still
+analysed. A failed one prints a red "BLACS reported shot ... as failed" line in
+runmanager's output for a shot it never queued, which is harmless but reads as
+though something went wrong with the queue.
+
+Executing a shot
+----------------
+
+Shot execution follows this pattern:
+
+#.  When BLACS is idle it asks runmanager for the next shot. If runmanager has
+    none, and a local override shot has been loaded in the BLACS GUI, BLACS runs
+    that instead.
+#.  BLACS checks the shot's connection table against the lab connection table.
+    A shot that fails this check is rejected: runmanager is told why, so that it
+    does not offer the same unusable shot again, and execution pauses. If that
+    rejection does not get through, the shot stays unacknowledged and is offered
+    again when BLACS next asks, to be rejected and pause again. BLACS logs the
+    lost rejection rather than resending it, because resending would have to
+    happen off the request thread and would break the ordering rule above.
+#.  BLACS acknowledges the shot to runmanager, and proceeds only if runmanager
+    confirms it recorded the acknowledgement.
+#.  For each device used by the shot, BLACS sends a message to the corresponding
+    device tab to program that device for hardware-timed execution. These
+    messages are asynchronous, so devices program in parallel where the device
+    tab's state machine allows it. During programming a device tab is in
+    ``transition_to_buffered`` mode.
+#.  BLACS waits until every device reports that it has entered buffered mode. If
+    a device times out or reports an error, BLACS aborts the shot, returns all
+    devices to manual mode, reports the failure to runmanager, releases the shot
+    and pauses execution.
+#.  Once all devices are ready, BLACS records the current state of the manual
+    controls — these usually affect the initial values of the shot — and
+    instructs the master pseudoclock to begin executing the programmed
     instructions.
-#.  The queue manager then waits for the master pseudoclock to report that the experiment 
-    shot has completed. If an error occurs in a device tab during a shot, the queue
-    manager aborts the shot (as previously described) and pauses the queue.
-#.  Once a shot has completed, the queue manager instructs all device tabs to ‘transition
-    to manual’ mode. At this stage, device tabs enter the ‘transition_to_manual’ state
-    machine mode where they save any acquired data and reprogram the hardware device
-    for manual operation via the BLACS GUI. Again, if errors occur during this process,
-    the queue manager aborts the shot as before, but with the additional step of cleaning
-    any saved data from the hdf5 file (so that the shot file is returned to the state prior
-    to execution).
-#.  The path to the shot file is now sent to a separate thread that runs a routine for
-    managing submission of shots to lyse for analysis. This routine forwards the shot file
-    paths to the lyse server specified in the BLACS GUI if analysis submission is enabled
-    (see figure 6.5 (13–14)). If lyse does not respond to these messages, the shot file paths
-    are buffered until such time as lyse does respond, to ensure no shots are missing from
-    analysis.
-#.  Finally, the queue manager checks the state of the repeat button in the BLACS GUI
-    and, if required, duplicates the shot (minus the acquired data) and places the duplicate
-    in the appropriate place in the queue.
-
-.. _fig-flowchart:
-
-.. figure:: img/blacs_queueflowchart.png
-
-    A flowchart of the logic for the BLACS queue manager. For brevity, we have
-    not included the logic for pausing the queue via the GUI or handling error conditions. See
-    the listing above for further details.
+#.  BLACS waits for the master pseudoclock to report that the shot has finished.
+    If a device restarts or errors during the run, BLACS aborts as above.
+#.  BLACS instructs every device tab to transition back to manual mode. Device
+    tabs save their acquired data and reprogram the hardware for manual
+    operation. If errors occur here, BLACS returns the shot file to its pre-run
+    state, so the shot can be run again, and pauses execution.
+#.  BLACS reports the outcome to runmanager. Runmanager, not BLACS, submits
+    completed shots to lyse.
