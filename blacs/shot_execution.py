@@ -340,7 +340,39 @@ class ShotExecutor(object):
             return False
             
         return True
-    
+
+    def reset_failed_shot_file(self, path):
+        """Return a failed shot's file to the state it was in before the run.
+
+        A shot that did not complete must not keep the partial data of the run
+        that failed, or it cannot be run again. Errors are logged and swallowed:
+        every caller is already handling a failure, and the shot file may be
+        unreadable precisely because of it. Letting that raise would take the
+        shot executor's thread down with it and stop BLACS running any further
+        shot, silently."""
+        try:
+            with h5py.File(path, 'r') as h5_file:
+                repeat_number = h5_file.attrs.get('run repeat', 0)
+            temp_path = tempfilename()
+            self.clean_h5_file(path, temp_path, repeat_number=repeat_number)
+            try:
+                shutil.move(temp_path, path)
+            except Exception:
+                stem, ext = os.path.splitext(path)
+                retry_path = stem + '_retry' + ext
+                self._logger.warning(
+                    "Couldn't delete failed run file %s, another process may be "
+                    "using it. Using alternate filename %s for second attempt.",
+                    path, retry_path, exc_info=True,
+                )
+                shutil.move(temp_path, retry_path)
+        except Exception:
+            self._logger.exception(
+                'Could not reset the failed shot file %s. It keeps the data of '
+                'the run that failed and cannot be run again as it stands.',
+                path,
+            )
+
     @inmain_decorator(wait_for_return=True)
     def set_status(self, status_text, shot_filepath=None):
         self._ui.shot_status.setText(str(status_text))
@@ -376,6 +408,22 @@ class ShotExecutor(object):
        
      
     def manage(self):
+        """Run the shot loop, and make sure it cannot end invisibly.
+
+        This loop is the only thing that runs shots. If its thread ends, BLACS
+        stays up and responsive, keeps reporting whatever status it last set,
+        and never runs another shot -- and no frame above this one would say
+        so. Anything the loop does not handle stops here, visibly."""
+        try:
+            self._manage()
+        except Exception:
+            self._logger.exception('Shot execution stopped on an unhandled error.')
+            # Raise in a thread for visibility, as the loop does for a failed shot:
+            zprocess.raise_exception_in_thread(sys.exc_info())
+            self.manager_paused = True
+            self.set_status("Shot execution stopped\nSee the log; restart BLACS")
+
+    def _manage(self):
         logger = logging.getLogger('BLACS.shot_executor.thread')
         process_tree.zlock_client.set_thread_name('shot_executor')
         # While the program is running!
@@ -806,34 +854,18 @@ class ShotExecutor(object):
             # End try/except block here
             except Exception:
                 logger.exception("Error in shot execution. Execution paused.")
-                # Capture before the cleanup below, which may rename the file:
-                outcome_path = path
 
                 # Raise the error in a thread for visibility
                 zprocess.raise_exception_in_thread(sys.exc_info())
                 # clean up the h5 file
                 self.manager_paused = True
-                # is this a repeat?
-                with h5py.File(path, 'r') as h5_file:
-                    repeat_number = h5_file.attrs.get('run repeat', 0)
-                # clean the h5 file:
-                temp_path = tempfilename()
-                self.clean_h5_file(path, temp_path, repeat_number=repeat_number)
-                try:
-                    shutil.move(temp_path, path)
-                except Exception:
-                    msg = ('Couldn\'t delete failed run file %s, ' % path + 
-                           'another process may be using it. Using alternate ' 
-                           'filename for second attempt.')
-                    logger.warning(msg, exc_info=True)
-                    shutil.move(temp_path, path.replace('.h5','_retry.h5'))
-                    path = path.replace('.h5','_retry.h5')
+                self.reset_failed_shot_file(path)
                 
                 # Need to put devices back in manual mode
                 self._abort_buffered_devices(devices_in_use, restart_function)
                 self.set_status("Error in shot execution\nExecution paused")
                 self.report_shot_outcome(
-                    outcome_path, 'failed', 'Error in shot execution')
+                    path, 'failed', 'Error in shot execution')
 
                 # disconnect and disable abort button
                 inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
@@ -945,28 +977,12 @@ class ShotExecutor(object):
                 zprocess.raise_exception_in_thread(sys.exc_info())
                 
             if error_condition:                
-                # Capture before the cleanup below, which may rename the file:
-                outcome_path = path
                 # clean up the h5 file
                 self.manager_paused = True
-                # is this a repeat?
-                with h5py.File(path, 'r') as h5_file:
-                    repeat_number = h5_file.attrs.get('run repeat', 0)
-                # clean the h5 file:
-                temp_path = tempfilename()
-                self.clean_h5_file(path, temp_path, repeat_number=repeat_number)
-                try:
-                    shutil.move(temp_path, path)
-                except Exception:
-                    msg = ('Couldn\'t delete failed run file %s, ' % path + 
-                           'another process may be using it. Using alternate ' 
-                           'filename for second attempt.')
-                    logger.warning(msg, exc_info=True)
-                    shutil.move(temp_path, path.replace('.h5','_retry.h5'))
-                    path = path.replace('.h5','_retry.h5')
+                self.reset_failed_shot_file(path)
 
                 self.report_shot_outcome(
-                    outcome_path, 'failed',
+                    path, 'failed',
                     'Device(s) reported an error after the run')
                 # Runmanager owns the queue and decides what happens to a
                 # shot we could not run, so do not hold on to it here:
