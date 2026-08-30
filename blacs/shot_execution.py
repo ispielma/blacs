@@ -485,6 +485,16 @@ class ShotExecutor(object):
                         self.set_status(
                             "Runmanager did not confirm the shot\nWaiting"
                         )
+                        # Throttle before asking again. An unreachable
+                        # runmanager self-throttles on its own timeouts, but a
+                        # runmanager that answers and declines to record the
+                        # shot returns straight away, and the shot is offered
+                        # again on the next request. Without this the loop
+                        # spins at RPC speed, reopening the shot file and
+                        # comparing the connection table every pass. Mismatched
+                        # shared_drive prefixes between the two hosts make that
+                        # permanent rather than transient.
+                        time.sleep(1)
                         continue
                 if path is None:
                     logger.error(message.strip())
