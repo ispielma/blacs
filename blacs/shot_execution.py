@@ -55,6 +55,12 @@ def tempfilename(prefix='BLACS-temp-', suffix='.h5'):
 
 
 class ShotExecutor(object):
+
+    # How long the notifier keeps trying to deliver queued shot outcomes after
+    # shot execution has been told to stop. Matches the worker-shutdown budget
+    # in __main__, which is what bounds how long BLACS takes to close.
+    OUTCOME_FLUSH_TIMEOUT = 2
+
     def __init__(self, BLACS, ui):
         self._ui = ui
         self.BLACS = BLACS
@@ -68,6 +74,7 @@ class ShotExecutor(object):
         self._runmanager_notify_error_logged = False
         self.failure_reason = None
         self.completed_shots = queue.Queue()
+        self._outcome_flush_deadline = None
         self._next_rep_index = {}
         
         self._logger = logging.getLogger('BLACS.ShotExecutor')
@@ -233,15 +240,25 @@ class ShotExecutor(object):
             return
         self.completed_shots.put((path_to_agnostic(path), status, message))
 
+    def stop(self):
+        """Stop shot execution, giving queued outcomes a bounded chance to land.
+
+        Called from the GUI thread as BLACS closes, so it does not block: the
+        notifier keeps draining for a short grace period after this returns,
+        and names whatever it could not deliver."""
+        self._outcome_flush_deadline = time.monotonic() + self.OUTCOME_FLUSH_TIMEOUT
+        self.manager_running = False
+
     def notify_runmanager_of_completed_shots(self):
         pending_outcome = None
-        while self.manager_running:
+        while True:
             if pending_outcome is None:
                 try:
                     pending_outcome = self.completed_shots.get(timeout=1)
                 except queue.Empty:
-                    continue
-
+                    if self.manager_running:
+                        continue
+                    break
             agnostic_path, status, message = pending_outcome
             success, _ = self.runmanager_rpc(
                 '_runmanager_notify_client',
@@ -255,8 +272,37 @@ class ShotExecutor(object):
             )
             if success:
                 pending_outcome = None
-            else:
-                time.sleep(1)
+                continue
+            if not self.manager_running and self._outcome_flush_expired():
+                break
+            time.sleep(1)
+        self._report_undelivered_outcomes(pending_outcome)
+
+    def _outcome_flush_expired(self):
+        deadline = self._outcome_flush_deadline
+        return deadline is None or time.monotonic() > deadline
+
+    def _report_undelivered_outcomes(self, pending_outcome=None):
+        """Name every shot outcome runmanager was never told about.
+
+        Runmanager decides whether a shot that did not complete is retried or
+        dropped, so an outcome that never arrives leaves that shot with no
+        terminal state there and the failure policy never runs on it. Naming
+        the files is what lets an operator put it right by hand."""
+        undelivered = [] if pending_outcome is None else [pending_outcome]
+        while True:
+            try:
+                undelivered.append(self.completed_shots.get_nowait())
+            except queue.Empty:
+                break
+        for agnostic_path, status, message in undelivered:
+            self._logger.warning(
+                'Runmanager was never told that %s %s%s, and has no outcome '
+                'recorded for it.',
+                agnostic_path,
+                status,
+                ': %s' % message if message else '',
+            )
     
     def process_request(self,h5_filepath):
         # check connection table

@@ -132,7 +132,7 @@ class BLACSWindow(QMainWindow):
             logger.info('destroy called')
             if not self.blacs.exiting:
                 self.blacs.exiting = True
-                self.blacs.shot_executor.manager_running = False
+                self.blacs.shot_executor.stop()
                 self.blacs.settings.close()
                 experiment_server.shutdown()
                 plugins.manager.close_plugins()
@@ -576,8 +576,10 @@ class BLACS(LabscriptApplication):
                     pending_threads[name].join()
                     del pending_threads[name]
                     del self.tablist[name]
-        if not self.tablist:
-            # All tabs are closed.
+        notifier = self.shot_executor.completion_notifier
+        if not self.tablist and (overdue or not notifier.is_alive()):
+            # All tabs are closed, and the shot executor has finished reporting
+            # outcomes to runmanager or has run out of time to do so.
             self.exit_complete = True
             logger.info('quitting')
             return
