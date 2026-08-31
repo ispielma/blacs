@@ -576,10 +576,10 @@ class BLACS(LabscriptApplication):
                     pending_threads[name].join()
                     del pending_threads[name]
                     del self.tablist[name]
-        notifier = self.shot_executor.completion_notifier
-        if not self.tablist and (overdue or not notifier.is_alive()):
-            # All tabs are closed, and the shot executor has finished reporting
-            # outcomes to runmanager or has run out of time to do so.
+        if not self.tablist:
+            # All tabs are closed. Nothing is waiting on the shot executor:
+            # outcomes travel on the next exchange, and the shot runmanager
+            # offered keeps its place in its queue until one arrives.
             self.exit_complete = True
             logger.info('quitting')
             return

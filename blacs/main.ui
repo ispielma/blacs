@@ -184,19 +184,19 @@ QToolButton:hover:checked {
                     <number>0</number>
                    </property>
                    <item>
-                    <widget class="QPushButton" name="shot_pause_button">
+                    <widget class="QPushButton" name="shot_request_button">
                      <property name="focusPolicy">
                       <enum>Qt::NoFocus</enum>
                      </property>
                      <property name="toolTip">
-                      <string>Pause shot execution</string>
+                      <string>Request shots from runmanager, and run the local override shot when it has none</string>
                      </property>
                      <property name="text">
-                      <string>Pause</string>
+                      <string>Request shots</string>
                      </property>
                      <property name="icon">
                       <iconset>
-                       <normaloff>:/qtutils/fugue/control-pause.png</normaloff>:/qtutils/fugue/control-pause.png</iconset>
+                       <normaloff>:/qtutils/fugue/control.png</normaloff>:/qtutils/fugue/control.png</iconset>
                      </property>
                      <property name="checkable">
                       <bool>true</bool>
