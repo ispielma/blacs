@@ -68,6 +68,12 @@ class ShotExecutor(object):
         self._runmanager_request_client = None
         self._runmanager_request_error_logged = False
         self.failure_reason = None
+        # Why requests were stopped here, at the apparatus: an abort, a shot we
+        # could not run, a device that needs attention. Distinct from
+        # failure_reason, which is why runmanager could not be reached, and
+        # read from outside this class so that it can be shown to a runmanager
+        # user who is not standing at BLACS.
+        self.local_error = None
         # How the shot we are running turned out, until the next exchange
         # carries it to runmanager, and the id of the shot we are running:
         self._pending_outcome = None
@@ -132,9 +138,32 @@ class ShotExecutor(object):
     @inmain_decorator(True)
     def requesting_shots(self,value):
         value = bool(value)
+        if value:
+            # Asking for shots again is how an operator acknowledges whatever
+            # stopped them: one action clears the error and tries again. It
+            # deliberately re-checks nothing first -- the per-device check made
+            # when the shot is programmed is still the final authority, and
+            # will stop requests again if the problem is still there.
+            self.local_error = None
         self._requesting_shots = value
         if value != self._ui.shot_request_button.isChecked():
             self._ui.shot_request_button.setChecked(value)
+
+    @inmain_decorator(True)
+    def stop_requesting_shots(self, reason):
+        """Stop asking for shots because something here needs attention.
+
+        Every shot that does not complete comes through here, so that BLACS
+        never starts another one before an operator has seen why the last one
+        did not run, and so that the reason survives to be shown -- here, and
+        to a runmanager user who cannot see this window.
+
+        Called from the shot loop, but run on the GUI thread, so that recording
+        the reason and stopping requests happen together: an operator asking
+        for shots again in between would otherwise clear a reason that is set
+        moments later, leaving requests stopped and nothing saying why."""
+        self.local_error = str(reason)
+        self.requesting_shots = False
 
     @property
     @inmain_decorator(True)
@@ -439,7 +468,8 @@ class ShotExecutor(object):
             self._logger.exception('Shot execution stopped on an unhandled error.')
             # Raise in a thread for visibility, as the loop does for a failed shot:
             zprocess.raise_exception_in_thread(sys.exc_info())
-            self.requesting_shots = False
+            self.stop_requesting_shots(
+                'Shot execution stopped on an unhandled error; restart BLACS')
             self.set_status("Shot execution stopped\nSee the log; restart BLACS")
 
     def _manage(self):
@@ -513,12 +543,17 @@ class ShotExecutor(object):
                         )
 
                 if not agnostic_path:
-                    if runmanager_failed:
-                        self.set_status("Runmanager unavailable")
-                    elif not request_shot:
-                        self.set_status("Not requesting shots")
-                    else:
-                        self.set_status("Idle")
+                    # Nothing to say when something here stopped requests: the
+                    # status already says why, and this pass -- the one that
+                    # delivers that shot's outcome -- would otherwise wipe it
+                    # within a second of an operator having a chance to read it.
+                    if not self.local_error:
+                        if runmanager_failed:
+                            self.set_status("Runmanager unavailable")
+                        elif not request_shot:
+                            self.set_status("Not requesting shots")
+                        else:
+                            self.set_status("Idle")
                     time.sleep(1)
                     continue
 
@@ -527,15 +562,18 @@ class ShotExecutor(object):
                     logger.error(message.strip())
                     if shot_id is not None:
                         # A shot we cannot run is reported as rejected on the
-                        # next exchange. Runmanager decides what becomes of the
-                        # row; stop requesting until an operator has seen why.
+                        # next exchange. Runmanager keeps the row and decides
+                        # what becomes of it; stop requesting until an operator
+                        # has seen why.
                         self.report_shot_outcome(None, 'rejected', message.strip())
-                        self.requesting_shots = False
                         self.set_status("Rejected shot from runmanager\nRequests stopped")
-                    elif runmanager_failed:
-                        self.set_status("Runmanager unavailable")
                     else:
-                        self.set_status("Idle")
+                        # The local override shot is nothing to do with
+                        # runmanager, so there is no row and no outcome to
+                        # report, but a shot we cannot run still needs an
+                        # operator rather than being retried once a second.
+                        self.set_status("Rejected local override shot\nRequests stopped")
+                    self.stop_requesting_shots(message.strip())
                     time.sleep(1)
                     continue
 
@@ -680,25 +718,24 @@ class ShotExecutor(object):
                     # so that runmanager decides what becomes of the shot, and
                     # an operator has seen why, before we ask for another one.
                     outcome_path = path
-                    self.requesting_shots = False
                     if timed_out:
-                        self.set_status("Programming timed out\nRequests stopped")
-                        self.report_shot_outcome(
-                            outcome_path, 'failed', 'Programming timed out')
+                        status_text = "Programming timed out\nRequests stopped"
+                        outcome_status, reason = 'failed', 'Programming timed out'
                     elif abort:
-                        self.set_status("Aborted\nRequests stopped")
-                        path = None
-                        self.report_shot_outcome(outcome_path, 'aborted', 'Aborted')
+                        status_text = "Aborted\nRequests stopped"
+                        outcome_status, reason = 'aborted', 'Aborted'
                     elif restarted:
-                        self.set_status("Device restarted in transition to\nbuffered. Aborted. Requests stopped.")
-                        self.report_shot_outcome(
-                            outcome_path, 'failed',
-                            'Device restarted while transitioning to buffered')
+                        status_text = ("Device restarted in transition to\nbuffered. "
+                                       "Aborted. Requests stopped.")
+                        outcome_status, reason = (
+                            'failed', 'Device restarted while transitioning to buffered')
                     else:
-                        self.set_status("Device(s) in error state\nRequests stopped")
-                        self.report_shot_outcome(
-                            outcome_path, 'failed', 'Device(s) in error state')
-                        
+                        status_text = "Device(s) in error state\nRequests stopped"
+                        outcome_status, reason = 'failed', 'Device(s) in error state'
+                    self.set_status(status_text)
+                    self.stop_requesting_shots(reason)
+                    self.report_shot_outcome(outcome_path, outcome_status, reason)
+
                     # Abort the run for all devices in use:
                     # Recreate the notification queue here because we don't want
                     # to hear from devices that are still transitioning to
@@ -793,14 +830,14 @@ class ShotExecutor(object):
                 inmain(self._ui.shot_abort_button.setEnabled,False)
                 
                 if restarted:                    
-                    self.requesting_shots = False
+                    self.stop_requesting_shots('Device restarted during the run')
                     self.set_status("Device restarted during run.\nAborted. Requests stopped")
                     self.report_shot_outcome(
                         path, 'failed', 'Device restarted during the run')
                 elif abort:
-                    # Pause as for any other shot that did not complete, so
+                    # Stop as for any other shot that did not complete, so
                     # runmanager decides whether it goes back in the queue:
-                    self.requesting_shots = False
+                    self.stop_requesting_shots('Aborted')
                     self.set_status("Aborted\nRequests stopped")
                     self.report_shot_outcome(path, 'aborted', 'Aborted')
                     path = None
@@ -821,7 +858,7 @@ class ShotExecutor(object):
                 # Raise the error in a thread for visibility
                 zprocess.raise_exception_in_thread(sys.exc_info())
                 # clean up the h5 file
-                self.requesting_shots = False
+                self.stop_requesting_shots('Error in shot execution')
                 self.reset_failed_shot_file(path)
                 
                 # Need to put devices back in manual mode
@@ -927,26 +964,29 @@ class ShotExecutor(object):
                         inmain(tab.disconnect_restart_receiver, restart_function)
                         del transition_list[name]
                     
-                if error_condition:                
+                if error_condition:
+                    reason = 'Device(s) reported an error after the run'
                     self.set_status("Error in transition to manual\nRequests stopped")
-                                       
+
             except Exception:
                 error_condition = True
+                # Saving the data or putting the devices back failed, which is
+                # not the same as a device reporting an error, and is what an
+                # operator is told and what runmanager shows on the row:
+                reason = 'Error saving data after the run'
                 logger.exception("Error in shot execution. Requests stopped.")
                 self.set_status("Error in shot execution\nRequests stopped")
                 self._abort_buffered_devices(devices_in_use, restart_function)
 
                 # Raise the error in a thread for visibility
                 zprocess.raise_exception_in_thread(sys.exc_info())
-                
-            if error_condition:                
+
+            if error_condition:
                 # clean up the h5 file
-                self.requesting_shots = False
+                self.stop_requesting_shots(reason)
                 self.reset_failed_shot_file(path)
 
-                self.report_shot_outcome(
-                    path, 'failed',
-                    'Device(s) reported an error after the run')
+                self.report_shot_outcome(path, 'failed', reason)
                 # Runmanager owns the queue and decides what happens to a
                 # shot we could not run, so do not hold on to it here:
                 path = None
@@ -973,8 +1013,10 @@ class ShotExecutor(object):
             self.set_status("Idle")
         if self._pending_outcome is not None:
             # BLACS is closing with an outcome it never got to report. The row
-            # is still in runmanager's queue, so nothing is lost there, but it
-            # will be run again: say which shot, and how it went.
+            # is still in runmanager's queue, but it is stuck there: runmanager
+            # marked it running when it offered it, and only an outcome or a
+            # deletion clears that, so the queue behind it will not move until
+            # an operator deletes the row. Say which shot, and how it went.
             logger.warning(
                 'Runmanager was never told that shot %s %s%s.',
                 self._pending_outcome['shot_id'],

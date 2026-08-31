@@ -8,6 +8,8 @@ import logging
 import types
 import unittest
 
+import zprocess
+
 from blacs import shot_execution
 from blacs.shot_execution import ShotExecutor
 
@@ -61,6 +63,9 @@ class FakeRunmanager(object):
 
     def __call__(self, client_attr, error_attr, method_name, unavailable, *args, **kwargs):
         self.calls.append((method_name, args))
+        if method_name == 'queue_exchange' and not args[1]:
+            # Runmanager offers nothing to an exchange that did not ask:
+            return self.reached, {'state': 'none', 'shot_id': None, 'path': None}
         return self.reached, self.response
 
     def sent(self, method_name):
@@ -75,6 +80,7 @@ def make_executor():
     executor._requesting_shots = False
     executor._pending_outcome = None
     executor._current_shot_id = None
+    executor.local_error = None
     executor.last_opened_shots_folder = ''
     return executor
 
@@ -175,11 +181,11 @@ class ExchangeTests(unittest.TestCase):
         self.assertIsNone(outcome, 'a local shot is not in runmanager\'s queue')
 
 
-class ShotLoopTests(unittest.TestCase):
+class ShotLoopFixture(object):
     """Drive the real shot loop over a fake runmanager.
 
     Nothing here reaches hardware: the loop is stopped after a couple of passes
-    without ever being offered a shot to run.
+    without ever being offered a shot it can run.
     """
 
     def setUp(self):
@@ -211,6 +217,8 @@ class ShotLoopTests(unittest.TestCase):
         executor.runmanager_rpc = runmanager
         return executor, runmanager
 
+
+class ShotLoopTests(ShotLoopFixture, unittest.TestCase):
     def test_requesting_shots_asks_runmanager_for_work(self):
         executor, runmanager = self.make_looping_executor(
             {'state': 'none', 'shot_id': None, 'path': None}
@@ -265,6 +273,108 @@ class ShotLoopTests(unittest.TestCase):
 
         self.assertEqual(taken_up, [], 'not even the local override shot runs')
         self.assertEqual(executor.get_status(), 'Not requesting shots')
+
+
+def failing_manage():
+    raise RuntimeError('the shot loop fell over')
+
+
+class LocalErrorLatchTests(ShotLoopFixture, unittest.TestCase):
+    """A shot that does not complete stops requests until an operator says go.
+
+    The apparatus-side failures behind most of these -- a programming timeout,
+    a device restart, a device error, an error during the run or the cleanup
+    after it -- happen deep inside the shot loop and need real device tabs to
+    reach, so the transition they share is exercised directly. The two
+    reachable ones, a rejected runmanager shot and a rejected local override
+    shot, are driven through the loop itself.
+    """
+
+    def test_a_shot_blacs_cannot_run_stops_requests_and_says_why(self):
+        executor, runmanager = self.make_looping_executor(
+            offer('shot-1', '/tmp/shot_a.h5')
+        )
+        executor._requesting_shots = True
+        executor.process_request = lambda path: (
+            None,
+            'Connection table of your file is not a subset\n',
+        )
+
+        self.run_loop(executor)
+
+        self.assertFalse(
+            executor.requesting_shots, 'requests stop until an operator says go'
+        )
+        self.assertIn('Connection table', executor.local_error)
+        exchanges = runmanager.sent('queue_exchange')
+        self.assertEqual(
+            [request_shot for _, request_shot in exchanges],
+            [True, False],
+            'the exchange carrying a failure does not ask for another shot',
+        )
+        outcome = exchanges[1][0]
+        self.assertEqual(outcome['shot_id'], 'shot-1')
+        self.assertEqual(outcome['status'], 'rejected')
+        self.assertIn(
+            'Rejected',
+            executor.get_status(),
+            'delivering the outcome must not write over why requests stopped',
+        )
+
+    def test_requesting_shots_again_clears_the_error_and_asks_for_work(self):
+        executor, runmanager = self.make_looping_executor(
+            {'state': 'none', 'shot_id': None, 'path': None}
+        )
+        executor.stop_requesting_shots('Device(s) in error state')
+        self.assertFalse(executor.requesting_shots)
+
+        executor.requesting_shots = True
+
+        self.assertIsNone(
+            executor.local_error, 'requesting shots again acknowledges the error'
+        )
+        # FakeBLACS has no device tabs at all, so asking for work again cannot
+        # have consulted them: recovery is one action, and the per-device check
+        # when the shot is programmed stays the final authority.
+        self.run_loop(executor)
+        self.assertEqual(
+            [request_shot for _, request_shot in runmanager.sent('queue_exchange')],
+            [True, True],
+        )
+
+    def test_a_local_override_shot_that_cannot_run_stops_requests_silently(self):
+        executor, runmanager = self.make_looping_executor(
+            {'state': 'none', 'shot_id': None, 'path': None}
+        )
+        executor._requesting_shots = True
+        executor._ui.local_override_lineEdit.setText('/tmp/override.h5')
+        executor.process_request = lambda path: (None, 'Not a valid run file\n')
+
+        self.run_loop(executor)
+
+        self.assertFalse(executor.requesting_shots)
+        self.assertIn('Not a valid run file', executor.local_error)
+        self.assertIsNone(executor._pending_outcome)
+        self.assertEqual(
+            [outcome for outcome, _ in runmanager.sent('queue_exchange')],
+            [None],
+            'a local override shot has no row in runmanager to report against',
+        )
+
+    def test_a_shot_loop_that_dies_stops_requests_and_says_why(self):
+        executor = make_executor()
+        executor._requesting_shots = True
+        executor._manage = failing_manage
+        shot_execution.zprocess = types.SimpleNamespace(
+            raise_exception_in_thread=lambda info: None
+        )
+        try:
+            ShotExecutor.manage(executor)
+        finally:
+            shot_execution.zprocess = zprocess
+
+        self.assertFalse(executor.requesting_shots)
+        self.assertIn('Shot execution stopped', executor.local_error)
 
 
 if __name__ == '__main__':
