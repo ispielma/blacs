@@ -201,23 +201,35 @@ it carries the same columns as everything else, and it is there whether or not
 BLACS has a shot, saying so when it does not, so the queue below it never
 shifts.
 
-That the row is still in the queue means queue editing can reach it, and must
-not: deleting it would delete the HDF5 file BLACS is writing into.
+That the row is still in the queue means queue editing can reach it, and the
+file must not be taken away: BLACS may be writing into it.
 
-Deleting rows, and both *Empty queue, then add shots…* submission modes — which
-clear the queue before submitting the replacement batch — therefore skip the
-running row and keep its file. The two are not skipped by the same rule, and
-the difference matters. Delete refuses only the running row, so a failed one
-can be discarded; that is the point of it. The replacement modes leave
-everything that has been sent to BLACS, failed included, because what they
-offer is to replace *the queue* — the work still waiting — and a shot that came
-back needing attention is not what an operator meant to discard by submitting
-different work. Deleting it is still possible and still explicit.
+So Delete does not remove that row — it cancels it. The row stays, struck
+through, and is never offered again under any circumstance; what clears it is
+BLACS's next request carrying no outcome for it, which is the one thing that
+proves nobody is running it, and therefore the moment its file is free. That is
+the same fact the reclaim rests on. An outcome arriving first clears it too,
+whatever the outcome was: the operator has said they do not want this shot, so a
+failure does not stay red to be retried, while a completed one is still reported
+onward — the cancel is about the queue, not about physics that already happened.
 
-The running row cannot even be selected, so Delete cannot be aimed at it; its
-tooltip says why. The queue would refuse it regardless, but saying so afterwards
-means writing into the output box on another tab, which an operator looking at
-the queue does not see. A selected row is identified to the queue by its
+Nothing removes a cancelled row sooner, and nothing can: a second Delete could
+not know the file was free any more than the first could. A BLACS that never
+comes back therefore leaves the row struck through and inert, which is honest —
+it is not running, it is not going to run, and nothing here can safely delete
+it. Ticking *Request shots* clears it.
+
+Both *Empty queue, then add shots…* submission modes — which clear the queue
+before submitting the replacement batch — leave everything that has been sent to
+BLACS, failed included, because what they offer is to replace *the queue*, the
+work still waiting, and a shot that came back needing attention is not what an
+operator meant to discard by submitting different work. Deleting such a row is
+still possible and still explicit.
+
+The row BLACS has can be selected, because Delete now does something to it, and
+its tooltip says what: that it cancels rather than removes. A cancelled row
+cannot be selected again, there being nothing further to aim at it. A selected
+row is identified to the queue by its
 stable ``shot_id`` rather than by its position, because the queue moves on its
 own: a shot finishing removes a row while an operator has one selected, and a
 row number that meant one shot when the table was drawn can mean another by the
