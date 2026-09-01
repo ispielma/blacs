@@ -96,6 +96,7 @@ class ShotExecutor(object):
         # without the GUI thread. Written only by set_status():
         self.status_text = ''
         self.status_shot_filepath = None
+        self.status_shot_id = None
         self._next_rep_index = {}
 
         self._logger = logging.getLogger('BLACS.ShotExecutor')
@@ -459,6 +460,15 @@ class ShotExecutor(object):
         # the labels and what is published cannot drift apart.
         self.status_text = str(status_text)
         self.status_shot_filepath = shot_filepath
+        # The id is taken here, with the path, so the two are written together
+        # and describe one moment. Publishing _current_shot_id directly meant
+        # they were not: it is cleared when the outcome is recorded, while the
+        # path lives until the next status is set, and everything between --
+        # every shot_complete callback, for as long as a plugin takes -- was a
+        # window in which the snapshot showed a path with no id. Runmanager
+        # reads that as the one thing it cannot be, a shot from no queue, and
+        # told the operator their queued shot was BLACS's own.
+        self.status_shot_id = self._current_shot_id if shot_filepath else None
         self._ui.shot_status.setText(self.status_text)
         if shot_filepath is not None:
             self._ui.running_shot_name.setText('<b>%s</b>'% str(os.path.basename(shot_filepath)))
@@ -479,7 +489,7 @@ class ShotExecutor(object):
         return {
             'requesting_shots': bool(self._requesting_shots),
             'status': self.status_text,
-            'shot_id': self._current_shot_id,
+            'shot_id': self.status_shot_id,
             'shot_path': path_to_agnostic(shot_path) if shot_path else None,
             'error': self.local_error,
         }

@@ -88,6 +88,7 @@ def make_executor():
     executor.local_error = None
     executor.status_text = ''
     executor.status_shot_filepath = None
+    executor.status_shot_id = None
     executor.last_opened_shots_folder = ''
     return executor
 
@@ -158,6 +159,62 @@ class StatusSnapshotTests(unittest.TestCase):
             asker.is_alive(), 'a status query must not wait on the GUI thread'
         )
         self.assertEqual(answers[0]['status'], 'Transitioning to buffered...')
+
+
+class SnapshotDuringCompletionTests(unittest.TestCase):
+    """The snapshot must not describe a moment that never existed.
+
+    The id of the shot being run was cleared when its outcome was recorded, but
+    the path stays until the next status is set -- and between the two run every
+    shot_complete plugin callback, lyse submission among them, for as long as
+    the user's plugins take. A poll landing in there saw a path with no id,
+    which runmanager reads as the one thing it cannot be: a shot from no queue.
+    It told the operator their queued shot was BLACS's own local override.
+    """
+
+    def test_a_completed_queued_shot_is_still_named_while_its_callbacks_run(self):
+        executor = make_executor()
+        executor.requesting_shots = True
+        executor._current_shot_id = 'shot-1'
+        executor.set_status('Saving data...', '/tmp/shot_a.h5')
+
+        executor.report_shot_outcome('/tmp/shot_a.h5', 'completed')
+        snapshot = executor.get_status_snapshot()
+
+        self.assertEqual(
+            snapshot['shot_path'],
+            '/tmp/shot_a.h5',
+            'the path is still shown, which is what makes the id matter',
+        )
+        self.assertEqual(
+            snapshot['shot_id'],
+            'shot-1',
+            'and it is still the queued shot it always was: no id here means '
+            'BLACS is running work of its own, which would be a lie',
+        )
+
+    def test_a_local_override_shot_still_has_no_id(self):
+        executor = make_executor()
+        executor.requesting_shots = True
+        executor.set_status('Running...', '/tmp/override.h5')
+
+        snapshot = executor.get_status_snapshot()
+
+        self.assertIsNone(
+            snapshot['shot_id'],
+            'this one really is BLACS\'s own, and runmanager should say so',
+        )
+
+    def test_going_idle_clears_both(self):
+        executor = make_executor()
+        executor._current_shot_id = 'shot-1'
+        executor.set_status('Saving data...', '/tmp/shot_a.h5')
+
+        executor.set_status('Idle')
+
+        snapshot = executor.get_status_snapshot()
+        self.assertIsNone(snapshot['shot_path'])
+        self.assertIsNone(snapshot['shot_id'])
 
 
 class RequestShotsControlTests(unittest.TestCase):

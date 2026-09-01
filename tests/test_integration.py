@@ -352,6 +352,7 @@ class IntegrationFixture(object):
         executor.local_error = None
         executor.status_text = ''
         executor.status_shot_filepath = None
+        executor.status_shot_id = None
         executor.last_opened_shots_folder = ''
         executor.master_pseudoclock = 'pseudoclock'
         executor._runmanager_online = ''
