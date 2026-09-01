@@ -55,6 +55,12 @@ except Exception:
 PROVIDER_NONE = 'none'
 PROVIDER_PAUSED = 'paused'
 
+# What the status says when BLACS holds no shot. Requesting and getting nothing
+# is not idleness -- BLACS is asking runmanager once a second -- and saying so
+# is the clearest sign an operator has that the Request shots button is in:
+REQUESTING = 'Requesting shots'
+NOT_REQUESTING = 'Not requesting shots'
+
 
 def tempfilename(prefix='BLACS-temp-', suffix='.h5'):
     """Return a filepath appropriate for use as a temporary file"""
@@ -551,9 +557,18 @@ class ShotExecutor(object):
             # be reported is not held back by it either, so runmanager always
             # learns how the shot it offered turned out.
             if not self.requesting_shots and self._pending_outcome is None:
-                if self.get_status() == "Idle":
+                # Said once, and not over the top of a reason. Comparing
+                # against the message we are about to set is what makes this
+                # idempotent whatever the status was before -- it used to
+                # compare against "Idle", which meant a status set by any other
+                # branch, a paused runmanager's for one, stayed on the screen
+                # for as long as requests were off, describing something BLACS
+                # had stopped doing. A standing local error is different and is
+                # left alone, for the reason given where the other branches set
+                # their status.
+                if not self.local_error and self.get_status() != NOT_REQUESTING:
                     logger.info('Not requesting shots')
-                    self.set_status("Not requesting shots")
+                    self.set_status(NOT_REQUESTING)
                 time.sleep(1)
                 continue
 
@@ -619,11 +634,11 @@ class ShotExecutor(object):
                         if runmanager_failed:
                             self.set_status("Runmanager unavailable")
                         elif not request_shot:
-                            self.set_status("Not requesting shots")
+                            self.set_status(NOT_REQUESTING)
                         elif runmanager_paused:
                             self.set_status("Runmanager queue paused")
                         else:
-                            self.set_status("Idle")
+                            self.set_status(REQUESTING)
                     time.sleep(1)
                     continue
 

@@ -210,10 +210,16 @@ NOTHING_OFFERED = (
         {'state': 'none', 'shot_id': None, 'path': None},
         True,
         'none',
-        'Idle',
+        'Requesting shots',
     ),
     ('an unreachable runmanager', None, False, 'none', 'Runmanager unavailable'),
-    ('a reply we cannot read', 'not a response at all', True, 'none', 'Idle'),
+    (
+        'a reply we cannot read',
+        'not a response at all',
+        True,
+        'none',
+        'Requesting shots',
+    ),
 )
 
 
@@ -621,6 +627,73 @@ class LocalErrorLatchTests(ShotLoopFixture, unittest.TestCase):
 
         self.assertFalse(executor.requesting_shots)
         self.assertIn('Shot execution stopped', executor.local_error)
+
+
+class StatusWhenRequestsStopTests(ShotLoopFixture, unittest.TestCase):
+    """What the status says once requests are switched off.
+
+    It is the only reading an operator gets of the Request shots button beyond
+    the button itself, so it has to be right whatever BLACS was saying before,
+    and it must not bury a reason that requests stopped.
+    """
+
+    def run_changing_it_between_passes(self, executor, change):
+        """Run the loop, calling ``change`` after the first pass.
+
+        The change has to land between two passes of the same loop, because
+        that is where it happens: a shot fails, or an operator unticks the
+        button, while BLACS is running. Starting a second loop instead would
+        not test it -- _manage sets the status afresh when it starts.
+        """
+        passes = [0]
+
+        def at_the_end_of_a_pass(seconds):
+            passes[0] += 1
+            if passes[0] == 1:
+                change()
+            else:
+                executor._manager_running = False
+
+        shot_execution.time.sleep = at_the_end_of_a_pass
+        ShotExecutor._manage(executor)
+
+    def test_whatever_was_on_screen_gives_way_to_not_requesting_shots(self):
+        for description, response, reached, _, first_status in NOTHING_OFFERED:
+            with self.subTest(started_from=description):
+                executor, _ = self.make_looping_executor(response, reached=reached)
+                executor._requesting_shots = True
+                shown = []
+
+                def stop_requesting():
+                    shown.append(executor.get_status())
+                    executor._requesting_shots = False
+
+                self.run_changing_it_between_passes(executor, stop_requesting)
+
+                self.assertEqual(shown, [first_status], 'what was on screen')
+                self.assertEqual(
+                    executor.get_status(),
+                    'Not requesting shots',
+                    '%r is something BLACS has stopped doing' % first_status,
+                )
+
+    def test_a_reason_requests_stopped_is_not_written_over(self):
+        executor, _ = self.make_looping_executor(
+            {'state': 'none', 'shot_id': None, 'path': None}
+        )
+        executor._requesting_shots = True
+
+        def fail_the_way_a_shot_does():
+            executor.stop_requesting_shots('Device(s) in error state')
+            executor.set_status('Device(s) in error state\nRequests stopped')
+
+        self.run_changing_it_between_passes(executor, fail_the_way_a_shot_does)
+
+        self.assertIn(
+            'Device(s) in error state',
+            executor.get_status(),
+            'the reason is all an operator has to act on',
+        )
 
 
 if __name__ == '__main__':

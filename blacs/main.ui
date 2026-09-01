@@ -39,15 +39,16 @@ QPushButton:hover {
  }
 
 QPushButton:checked {
-     background-color: palette(window);
+     background-color: palette(highlight);
+     color: palette(highlighted-text);
      border: 1px solid palette(dark);
      border-radius: 3px;
  }
 
 QPushButton:hover:checked {
-     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                       stop: 0 palette(window), stop: 1 palette(light));
-     border: 1px solid palette(dark);
+     background-color: palette(highlight);
+     color: palette(highlighted-text);
+     border: 1px solid palette(highlighted-text);
      border-radius: 3px;
  }
 
@@ -196,7 +197,9 @@ QToolButton:hover:checked {
                      </property>
                      <property name="icon">
                       <iconset>
-                       <normaloff>:/qtutils/fugue/control.png</normaloff>:/qtutils/fugue/control.png</iconset>
+                       <normaloff>:/qtutils/fugue/control-stop-square.png</normaloff>
+                       <normalon>:/qtutils/fugue/control.png</normalon>
+                      </iconset>
                      </property>
                      <property name="checkable">
                       <bool>true</bool>
