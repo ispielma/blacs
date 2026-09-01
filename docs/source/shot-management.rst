@@ -190,7 +190,18 @@ not: deleting it would delete the HDF5 file BLACS is writing into.
 
 Deleting rows, and both *Empty queue, then add shots…* submission modes — which
 clear the queue before submitting the replacement batch — therefore skip the
-running row and keep its file. A selected row is identified to the queue by its
+running row and keep its file. The two are not skipped by the same rule, and
+the difference matters. Delete refuses only the running row, so a failed one
+can be discarded; that is the point of it. The replacement modes leave
+everything that has been sent to BLACS, failed included, because what they
+offer is to replace *the queue* — the work still waiting — and a shot that came
+back needing attention is not what an operator meant to discard by submitting
+different work. Deleting it is still possible and still explicit.
+
+The running row cannot even be selected, so Delete cannot be aimed at it; its
+tooltip says why. The queue would refuse it regardless, but saying so afterwards
+means writing into the output box on another tab, which an operator looking at
+the queue does not see. A selected row is identified to the queue by its
 stable ``shot_id`` rather than by its position, because the queue moves on its
 own: a shot finishing removes a row while an operator has one selected, and a
 row number that meant one shot when the table was drawn can mean another by the
