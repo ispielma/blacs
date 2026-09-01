@@ -79,6 +79,15 @@ same identifier: retry is the default, and deleting the row is the only way to
 discard it. There is no Retry/Drop policy any more; the operator's choice is
 between asking for shots again and deleting the row.
 
+A shot that never got as far as BLACS is held the same way. With lazy compile,
+a queued shot is compiled when BLACS asks for it, and one that fails to compile
+goes red at the head with the reason rather than being dropped — a row
+disappearing looks exactly like the queue draining normally, which is what a
+labscript file that cannot compile used to produce. That row is the one kind
+that is *not* retried: a compile that fails partway leaves data in the shot
+file that stops labscript ever compiling into it, so only deleting it, which
+takes the half-written file with it, moves the queue on.
+
 **A row still marked running is offered again.** If an offer reply never
 reaches BLACS, or BLACS restarts while holding the shot, the row would
 otherwise sit marked running for ever with the whole queue stopped behind it.
