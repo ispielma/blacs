@@ -176,8 +176,11 @@ The queue while a shot is running
 The row BLACS is executing stays in the queue, so the operator can see which
 queued item is on the hardware. It is set apart while it is there: the queue's
 first row is reserved for whichever shot has been sent to BLACS, ruled off from
-the work waiting below it and coloured green while it runs, red once it has come
-back not having run. It is a row rather than a caption above the table so that
+the work waiting below it. Running is simply what that row looks like — being
+above the rule is what says BLACS was given the shot, so it needs no colour of
+its own. One colour is used, for the one case that is an exception: the row
+turns red once the shot has come back without running, and is waiting for an
+operator. It is a row rather than a caption above the table so that
 it carries the same columns as everything else, and it is there whether or not
 BLACS has a shot, saying so when it does not, so the queue below it never
 shifts.
@@ -248,7 +251,7 @@ A **runmanager default shot** is produced by runmanager when its queue is empty
 and its *When queue is empty* setting asks for one, from the labscript file
 named in its *Default shot* field. It is a shot a runmanager user is running,
 so it is materialised as an ordinary queue row with its own stable identifier
-and follows every rule above: it is visible and green while it runs, goes red
+and follows every rule above: it is visible in the reserved row while it runs, goes red
 with its reason if it does not, is retried by the next request, can be deleted,
 and is removed and submitted to lyse when it completes. A failed default row
 holds back the next one, because a red row is the head of the queue and is what
