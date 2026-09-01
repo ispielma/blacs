@@ -47,6 +47,14 @@ try:
 except Exception:
     runmanager_remote = None
 
+# What an exchange says the runmanager at the other end did with our request.
+# Named here rather than imported because runmanager is optional above, and
+# these are wire values in any case. The two the loop tells apart: a runmanager
+# with nothing for us, and one whose queue its own user has paused. A paused
+# runmanager is not offering work; it is not telling us to stop.
+PROVIDER_NONE = 'none'
+PROVIDER_PAUSED = 'paused'
+
 
 def tempfilename(prefix='BLACS-temp-', suffix='.h5'):
     """Return a filepath appropriate for use as a temporary file"""
@@ -286,8 +294,15 @@ class ShotExecutor(object):
         One message does both, so that runmanager retires the row it offered
         before choosing what to offer next. The outcome is only let go of once
         runmanager has taken it; otherwise it rides on the next exchange rather
-        than being lost to a momentary outage. Returns ``(shot_id, path,
-        reached)`` describing the offered shot, if any."""
+        than being lost to a momentary outage.
+
+        Returns ``(response, reached)``: what runmanager said -- its provider
+        ``state``, and the ``shot_id`` and ``path`` of the shot when it offered
+        one -- and whether we reached it at all. A runmanager we could not
+        reach, or one whose reply we could not read, has offered nothing and is
+        reported as such rather than as paused: only runmanager saying it is
+        paused makes it paused."""
+        no_shot = {'state': PROVIDER_NONE, 'shot_id': None, 'path': None}
         reached, response = self.runmanager_rpc(
             '_runmanager_request_client',
             '_runmanager_request_error_logged',
@@ -300,11 +315,15 @@ class ShotExecutor(object):
             ),
         )
         if not reached:
-            return None, None, False
+            return no_shot, False
         self._pending_outcome = None
         if not isinstance(response, dict):
-            return None, None, True
-        return response.get('shot_id'), response.get('path'), True
+            return no_shot, True
+        return {
+            'state': str(response.get('state') or PROVIDER_NONE),
+            'shot_id': response.get('shot_id'),
+            'path': response.get('path'),
+        }, True
 
     def process_request(self,h5_filepath):
         # check connection table
@@ -512,6 +531,7 @@ class ShotExecutor(object):
                 request_shot = self.requesting_shots
                 shot_id = None
                 agnostic_path = None
+                runmanager_paused = False
                 runmanager_failed = False
                 alive, _ = self.runmanager_rpc(
                     '_runmanager_request_client',
@@ -525,9 +545,16 @@ class ShotExecutor(object):
                     # asks for the next one. There is nothing to acknowledge:
                     # the row stays in runmanager's queue while we run it, so a
                     # reply that never arrives costs a poll rather than a shot.
-                    shot_id, agnostic_path, reached = self.exchange_with_runmanager(
-                        request_shot
-                    )
+                    response, reached = self.exchange_with_runmanager(request_shot)
+                    shot_id = response['shot_id']
+                    agnostic_path = response['path']
+                    # A paused runmanager is one whose user has stopped it
+                    # offering work, which is nothing to do with whether this
+                    # apparatus should be running: we fall through to the local
+                    # override shot exactly as for a runmanager with an empty
+                    # queue, and say which it was so an operator can see why no
+                    # queued work is arriving.
+                    runmanager_paused = response['state'] == PROVIDER_PAUSED
                     runmanager_failed = not reached
                 else:
                     runmanager_failed = True
@@ -552,6 +579,8 @@ class ShotExecutor(object):
                             self.set_status("Runmanager unavailable")
                         elif not request_shot:
                             self.set_status("Not requesting shots")
+                        elif runmanager_paused:
+                            self.set_status("Runmanager queue paused")
                         else:
                             self.set_status("Idle")
                     time.sleep(1)

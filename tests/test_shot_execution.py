@@ -123,7 +123,7 @@ class ExchangeTests(unittest.TestCase):
         runmanager = FakeRunmanager(offer('shot-2', '/tmp/shot_b.h5'))
         executor.runmanager_rpc = runmanager
 
-        shot_id, path, reached = executor.exchange_with_runmanager(True)
+        response, reached = executor.exchange_with_runmanager(True)
 
         outcome, request_shot = runmanager.sent('queue_exchange')[0]
         self.assertEqual(outcome['shot_id'], 'shot-1')
@@ -133,7 +133,9 @@ class ExchangeTests(unittest.TestCase):
             'the outcome names the file that was actually run',
         )
         self.assertTrue(request_shot)
-        self.assertEqual((shot_id, path, reached), ('shot-2', '/tmp/shot_b.h5', True))
+        self.assertEqual(response['shot_id'], 'shot-2')
+        self.assertEqual(response['path'], '/tmp/shot_b.h5')
+        self.assertTrue(reached)
 
     def test_an_outcome_runmanager_has_taken_is_not_reported_again(self):
         executor = make_executor()
@@ -154,9 +156,8 @@ class ExchangeTests(unittest.TestCase):
         executor.report_shot_outcome('/tmp/shot_a.h5', 'completed')
         executor.runmanager_rpc = FakeRunmanager(reached=False)
 
-        self.assertEqual(
-            executor.exchange_with_runmanager(True), (None, None, False)
-        )
+        _, reached = executor.exchange_with_runmanager(True)
+        self.assertFalse(reached)
 
         runmanager = FakeRunmanager(offer('shot-2', '/tmp/shot_b.h5'))
         executor.runmanager_rpc = runmanager
@@ -167,9 +168,34 @@ class ExchangeTests(unittest.TestCase):
     def test_no_shot_offered_leaves_blacs_with_nothing_to_run(self):
         executor = make_executor()
         executor.runmanager_rpc = FakeRunmanager({'state': 'none', 'shot_id': None, 'path': None})
-        self.assertEqual(
-            executor.exchange_with_runmanager(True), (None, None, True)
+        response, reached = executor.exchange_with_runmanager(True)
+        self.assertEqual(response, {'state': 'none', 'shot_id': None, 'path': None})
+        self.assertTrue(reached)
+
+    def test_a_paused_runmanager_is_told_apart_from_one_with_nothing_to_offer(self):
+        executor = make_executor()
+        executor.runmanager_rpc = FakeRunmanager(
+            {'state': 'paused', 'shot_id': None, 'path': None}
         )
+        response, reached = executor.exchange_with_runmanager(True)
+        self.assertEqual(response['state'], 'paused')
+        self.assertIsNone(response['path'])
+        self.assertTrue(reached)
+
+    def test_a_runmanager_we_could_not_reach_is_not_taken_for_a_paused_one(self):
+        executor = make_executor()
+        executor.runmanager_rpc = FakeRunmanager(reached=False)
+        response, reached = executor.exchange_with_runmanager(True)
+        self.assertNotEqual(response['state'], 'paused')
+        self.assertFalse(reached)
+
+    def test_a_reply_we_cannot_read_is_not_taken_for_a_paused_one(self):
+        executor = make_executor()
+        executor.runmanager_rpc = FakeRunmanager('not a response at all')
+        response, reached = executor.exchange_with_runmanager(True)
+        self.assertNotEqual(response['state'], 'paused')
+        self.assertIsNone(response['path'])
+        self.assertTrue(reached)
 
     def test_only_a_shot_runmanager_offered_has_an_outcome_to_report(self):
         executor = make_executor()
@@ -210,10 +236,10 @@ class ShotLoopFixture(object):
         shot_execution.time.sleep = stop_after_a_couple_of_passes
         ShotExecutor._manage(executor)
 
-    def make_looping_executor(self, response):
+    def make_looping_executor(self, response, reached=True):
         executor = make_executor()
         executor._manager_running = True
-        runmanager = FakeRunmanager(response)
+        runmanager = FakeRunmanager(response, reached=reached)
         executor.runmanager_rpc = runmanager
         return executor, runmanager
 
@@ -273,6 +299,79 @@ class ShotLoopTests(ShotLoopFixture, unittest.TestCase):
 
         self.assertEqual(taken_up, [], 'not even the local override shot runs')
         self.assertEqual(executor.get_status(), 'Not requesting shots')
+
+
+NOTHING_OFFERED = (
+    # A runmanager whose queue its own user has paused, one with nothing
+    # queued -- or whose next shot is still compiling, which looks the same
+    # from here -- and one we cannot reach at all:
+    ('a paused queue', {'state': 'paused', 'shot_id': None, 'path': None}, True),
+    ('nothing to offer', {'state': 'none', 'shot_id': None, 'path': None}, True),
+    ('an unreachable runmanager', None, False),
+)
+
+
+class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
+    """A runmanager offering no shot is not telling this apparatus to stop.
+
+    Pausing a queue is that runmanager user's policy about their own work, and
+    a future second runmanager sharing this BLACS must not be able to stop the
+    apparatus by pausing its queue. So a paused reply -- like an empty one, or
+    no reply at all -- leaves BLACS requesting shots and running the local
+    override shot that keeps the apparatus busy.
+    """
+
+    def test_no_shot_offered_never_stops_blacs_requesting_shots(self):
+        for description, response, reached in NOTHING_OFFERED:
+            with self.subTest(runmanager=description):
+                executor, _ = self.make_looping_executor(response, reached=reached)
+                executor._requesting_shots = True
+
+                self.run_loop(executor)
+
+                self.assertTrue(
+                    executor.requesting_shots,
+                    'only this apparatus decides whether it stops',
+                )
+                self.assertIsNone(
+                    executor.local_error, 'nothing here needs attention'
+                )
+
+    def test_no_shot_offered_falls_back_to_the_local_override_shot(self):
+        for description, response, reached in NOTHING_OFFERED:
+            with self.subTest(runmanager=description):
+                executor, _ = self.make_looping_executor(response, reached=reached)
+                executor._requesting_shots = True
+                executor._ui.local_override_lineEdit.setText('/tmp/override.h5')
+                taken_up = []
+
+                def process_request(h5_filepath):
+                    # Stop short of running it: what is under test is that
+                    # BLACS got as far as taking the fallback shot up.
+                    taken_up.append(h5_filepath)
+                    return None, 'not a real shot file\n'
+
+                executor.process_request = process_request
+                self.run_loop(executor)
+
+                self.assertTrue(
+                    taken_up, 'the apparatus keeps working on its local shot'
+                )
+                self.assertTrue(taken_up[0].endswith('override.h5'))
+
+    def test_status_says_why_no_queued_work_is_arriving(self):
+        for description, response, reached, status in (
+            NOTHING_OFFERED[0] + ('Runmanager queue paused',),
+            NOTHING_OFFERED[1] + ('Idle',),
+            NOTHING_OFFERED[2] + ('Runmanager unavailable',),
+        ):
+            with self.subTest(runmanager=description):
+                executor, _ = self.make_looping_executor(response, reached=reached)
+                executor._requesting_shots = True
+
+                self.run_loop(executor)
+
+                self.assertEqual(executor.get_status(), status)
 
 
 def failing_manage():
