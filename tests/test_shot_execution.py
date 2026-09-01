@@ -5,6 +5,9 @@ neither of which belongs in a unit test, so these build an executor without it
 and give it the small surface the methods under test actually use.
 """
 import logging
+import os
+import shutil
+import tempfile
 import types
 import unittest
 
@@ -80,6 +83,7 @@ def make_executor():
     executor._requesting_shots = False
     executor._pending_outcome = None
     executor._current_shot_id = None
+    executor._next_rep_index = {}
     executor.local_error = None
     executor.last_opened_shots_folder = ''
     return executor
@@ -374,6 +378,75 @@ class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
                 self.assertEqual(executor.get_status(), status)
 
 
+class LocalFallbackTests(ShotLoopFixture, unittest.TestCase):
+    """The local override shot keeps the apparatus busy; it is not lab work.
+
+    It is BLACS's own, run because the configured runmanager had nothing to
+    offer, so it belongs to no runmanager queue row and no runmanager user
+    could know it happened. Its repetitions must not turn up in lyse alongside
+    shots someone actually asked for -- but each repetition still gets its own
+    file, so the data it did produce is never overwritten.
+    """
+
+    def test_a_completed_fallback_shot_is_not_reported_to_runmanager(self):
+        executor, runmanager = self.make_looping_executor(
+            {'state': 'none', 'shot_id': None, 'path': None}
+        )
+        executor._requesting_shots = True
+        executor._ui.local_override_lineEdit.setText('/tmp/override.h5')
+        # BLACS ran a runmanager shot on the pass before this one. That shot's
+        # id must not still be attached when the fallback shot completes, or
+        # runmanager would retire that row on the strength of a shot it never
+        # offered, and send this fallback file to lyse in its place.
+        executor._current_shot_id = 'shot-1'
+        outcomes_after_completion = []
+
+        def process_request(h5_filepath):
+            # The loop has taken the fallback shot up. Complete it the way the
+            # loop does once the devices are back in manual mode, then stop
+            # short of the apparatus.
+            executor.report_shot_outcome(h5_filepath, 'completed')
+            outcomes_after_completion.append(executor._pending_outcome)
+            return None, 'stopping short of the apparatus\n'
+
+        executor.process_request = process_request
+        self.run_loop(executor)
+
+        self.assertEqual(
+            outcomes_after_completion,
+            [None],
+            'a fallback shot has no outcome, so nothing reaches runmanager or lyse',
+        )
+        self.assertEqual(
+            [outcome for outcome, _ in runmanager.sent('queue_exchange')],
+            [None],
+            'runmanager was told nothing about a shot of BLACS\'s own',
+        )
+
+    def test_each_fallback_repetition_gets_a_file_of_its_own(self):
+        # The same override file is run over and over, and each run's data is
+        # written to a fresh numbered copy rather than over the last one.
+        executor = make_executor()
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        override = os.path.join(directory, 'override.h5')
+        open(override, 'w').close()
+
+        repetitions = []
+        for _ in range(3):
+            path, repeat_number = executor.new_rep_name(override)
+            self.assertFalse(
+                os.path.exists(path), 'a repetition never lands on existing data'
+            )
+            open(path, 'w').close()
+            repetitions.append((path, repeat_number))
+
+        paths = [path for path, _ in repetitions]
+        self.assertEqual(len(set(paths)), 3, 'each repetition is its own file')
+        self.assertNotIn(override, paths, 'and none of them is the override itself')
+        self.assertEqual([number for _, number in repetitions], [1, 2, 3])
+
+
 def failing_manage():
     raise RuntimeError('the shot loop fell over')
 
@@ -453,6 +526,11 @@ class LocalErrorLatchTests(ShotLoopFixture, unittest.TestCase):
 
         self.assertFalse(executor.requesting_shots)
         self.assertIn('Not a valid run file', executor.local_error)
+        self.assertIn(
+            'Rejected local override shot',
+            executor.get_status(),
+            'a fallback shot that needs attention says so here too',
+        )
         self.assertIsNone(executor._pending_outcome)
         self.assertEqual(
             [outcome for outcome, _ in runmanager.sent('queue_exchange')],
