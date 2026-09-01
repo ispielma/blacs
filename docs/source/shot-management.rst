@@ -173,14 +173,25 @@ it unchecks **Request shots**.
 The queue while a shot is running
 ---------------------------------
 
-The row BLACS is executing stays in the queue, coloured green, so the operator
-can see which queued item is on the hardware. That means queue editing can now
-reach it, and must not: deleting the row would delete the HDF5 file BLACS is
-writing into.
+The row BLACS is executing stays in the queue, so the operator can see which
+queued item is on the hardware. It is set apart while it is there: the queue's
+first row is reserved for whichever shot has been sent to BLACS, ruled off from
+the work waiting below it and coloured green while it runs, red once it has come
+back not having run. It is a row rather than a caption above the table so that
+it carries the same columns as everything else, and it is there whether or not
+BLACS has a shot, saying so when it does not, so the queue below it never
+shifts.
+
+That the row is still in the queue means queue editing can reach it, and must
+not: deleting it would delete the HDF5 file BLACS is writing into.
 
 Deleting rows, and both *Empty queue, then add shots…* submission modes — which
 clear the queue before submitting the replacement batch — therefore skip the
-running row and keep its file. Everything else they were asked to remove is
+running row and keep its file. A selected row is identified to the queue by its
+stable ``shot_id`` rather than by its position, because the queue moves on its
+own: a shot finishing removes a row while an operator has one selected, and a
+row number that meant one shot when the table was drawn can mean another by the
+time the key is pressed. Everything else they were asked to remove is
 removed, and runmanager writes one line in its output box saying why the
 running shot is still there. Waiting rows and red failed rows
 are deletable as normal — deleting a failed row is the only way to discard it,
