@@ -42,6 +42,26 @@ class FakeRunmanager(object):
         return [args for name, args in self.calls if name == method_name]
 
 
+class ExecutorReadDuringWrites(ShotExecutor):
+    """A ShotExecutor that reads its own snapshot after each attribute write.
+
+    Threads switch between bytecodes, so the states another thread can catch
+    this object in are exactly the ones each attribute write leaves behind.
+    Reading there covers every interleaving a status query could land on
+    without racing for one, and without naming the attributes, which is the
+    thing under test.
+
+    Nothing is recorded until a list is put in ``_snapshots_seen`` behind this
+    hook's back, so that a test's own setup writes are not observed.
+    """
+
+    def __setattr__(self, name, value):
+        object.__setattr__(self, name, value)
+        seen = self.__dict__.get('_snapshots_seen')
+        if seen is not None:
+            seen.append(self.get_status_snapshot())
+
+
 class StatusSnapshotTests(unittest.TestCase):
     """What BLACS publishes about itself for a runmanager user to read."""
 
@@ -164,6 +184,49 @@ class SnapshotDuringCompletionTests(unittest.TestCase):
         snapshot = executor.get_status_snapshot()
         self.assertIsNone(snapshot['shot_path'])
         self.assertIsNone(snapshot['shot_id'])
+
+
+class SnapshotIsOneStatusTests(unittest.TestCase):
+    """A snapshot must describe one status, not the seam between two.
+
+    set_status writes on the GUI thread while the snapshot is read on the
+    server thread, and neither takes a lock. Published as separate fields, a
+    reader landing between two of the writes read a status that never existed:
+    the new text beside the last shot, or the new shot's path beside the last
+    shot's id -- which is one shot reported under another's name.
+
+    Nothing schedules a reader there reliably, so this does not race for it.
+    It reads from between the writes themselves, which is every state a reader
+    could have caught.
+    """
+
+    def test_a_reader_between_the_writes_never_sees_two_statuses_mixed(self):
+        executor = make_executor()
+        executor.__class__ = ExecutorReadDuringWrites
+        executor._current_shot_id = 'shot-1'
+        executor.set_status('Running...', '/tmp/shot_a.h5')
+        before = executor.get_status_snapshot()
+
+        executor._current_shot_id = 'shot-2'
+        seen = []
+        object.__setattr__(executor, '_snapshots_seen', seen)
+        executor.set_status('Saving data...', '/tmp/shot_b.h5')
+        object.__setattr__(executor, '_snapshots_seen', None)
+        after = executor.get_status_snapshot()
+
+        self.assertNotEqual(
+            before, after, 'the two statuses must differ, or there is no seam'
+        )
+        self.assertTrue(
+            seen, 'no write was observed: the status is published some other way'
+        )
+        for snapshot in seen:
+            self.assertIn(
+                snapshot,
+                (before, after),
+                'a status query here would have described a moment that never '
+                'existed: %r' % (snapshot,),
+            )
 
 
 class HeldOutcomeWhenTheLoopEndsTests(unittest.TestCase):

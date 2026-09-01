@@ -18,7 +18,7 @@ import time
 import datetime
 import sys
 import shutil
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from tempfile import gettempdir
 from binascii import hexlify
 
@@ -61,6 +61,12 @@ PROVIDER_PAUSED = 'paused'
 REQUESTING = 'Requesting shots'
 NOT_REQUESTING = 'Not requesting shots'
 
+# What BLACS is doing, as one value: the text on the status labels, the shot
+# being run, and its id when runmanager's queue is where the shot came from.
+# One value because it is written on the GUI thread and read on the server
+# thread without a lock -- see set_status().
+PublishedStatus = namedtuple('PublishedStatus', ['text', 'shot_filepath', 'shot_id'])
+
 
 def tempfilename(prefix='BLACS-temp-', suffix='.h5'):
     """Return a filepath appropriate for use as a temporary file"""
@@ -99,9 +105,7 @@ class ShotExecutor(object):
         self._current_shot_id = None
         # What the status labels say, kept where a status query can read it
         # without the GUI thread. Written only by set_status():
-        self.status_text = ''
-        self.status_shot_filepath = None
-        self.status_shot_id = None
+        self.published_status = PublishedStatus('', None, None)
         self._next_rep_index = {}
 
         self._logger = logging.getLogger('BLACS.ShotExecutor')
@@ -474,23 +478,32 @@ class ShotExecutor(object):
 
     @inmain_decorator(wait_for_return=True)
     def set_status(self, status_text, shot_filepath=None):
-        # What the labels say is kept in plain attributes as well, because a
-        # runmanager asking what this BLACS is doing is answered on the server
-        # thread, and must be answered while a shot is running and the GUI
-        # thread is busy with it. This is the only place either is written, so
-        # the labels and what is published cannot drift apart.
-        self.status_text = str(status_text)
-        self.status_shot_filepath = shot_filepath
-        # The id is taken here, with the path, so the two are written together
-        # and describe one moment. Publishing _current_shot_id directly meant
-        # they were not: it is cleared when the outcome is recorded, while the
-        # path lives until the next status is set, and everything between --
-        # every shot_complete callback, for as long as a plugin takes -- was a
-        # window in which the snapshot showed a path with no id. Runmanager
+        # What the labels say is published as a plain attribute as well,
+        # because a runmanager asking what this BLACS is doing is answered on
+        # the server thread, and must be answered while a shot is running and
+        # the GUI thread is busy with it. This is the only place it is written,
+        # so the labels and what is published cannot drift apart.
+        #
+        # All of it goes out as one immutable value, assigned in one statement,
+        # and the snapshot takes that value once. A reader takes no lock, and a
+        # single assignment is atomic with respect to other threads, so what it
+        # reads is one whole status: the one before this call or the one after,
+        # never fields of both.
+        #
+        # The id is taken here rather than read from _current_shot_id when the
+        # snapshot is made: that is cleared when the outcome is recorded, while
+        # the path lives until the next status is set, and everything between
+        # -- every shot_complete callback, for as long as a plugin takes -- was
+        # a window in which the snapshot showed a path with no id. Runmanager
         # reads that as the one thing it cannot be, a shot from no queue, and
         # told the operator their queued shot was BLACS's own.
-        self.status_shot_id = self._current_shot_id if shot_filepath else None
-        self._ui.shot_status.setText(self.status_text)
+        status_text = str(status_text)
+        self.published_status = PublishedStatus(
+            text=status_text,
+            shot_filepath=shot_filepath,
+            shot_id=self._current_shot_id if shot_filepath else None,
+        )
+        self._ui.shot_status.setText(status_text)
         if shot_filepath is not None:
             self._ui.running_shot_name.setText('<b>%s</b>'% str(os.path.basename(shot_filepath)))
         else:
@@ -499,18 +512,23 @@ class ShotExecutor(object):
     def get_status_snapshot(self):
         """Report what this BLACS is doing, for a runmanager user to read.
 
-        Read-only, and read without the GUI thread: every field is a plain
-        attribute, so a busy BLACS still answers. Nothing here may change
+        Read-only, and read without the GUI thread: every field is read from a
+        plain attribute, so a busy BLACS still answers. Nothing here may change
         anything -- the gate on hardware execution, the error that closed it,
         and Abort all stay with the operator standing at this apparatus.
 
+        What the labels say and which shot they are about are taken together,
+        in one read of the one value set_status publishes, so that a status
+        being set while this runs cannot leave the answer describing two.
+
         The shot's path goes out shared-drive-agnostic, as an outcome does, so
         that a runmanager on another machine can read it."""
-        shot_path = self.status_shot_filepath
+        status = self.published_status
+        shot_path = status.shot_filepath
         return {
             'requesting_shots': bool(self._requesting_shots),
-            'status': self.status_text,
-            'shot_id': self.status_shot_id,
+            'status': status.text,
+            'shot_id': status.shot_id,
             'shot_path': path_to_agnostic(shot_path) if shot_path else None,
             'error': self.local_error,
         }

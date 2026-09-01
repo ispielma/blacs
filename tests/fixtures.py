@@ -31,7 +31,7 @@ with warnings.catch_warnings():
     import blacs.__main__
     from blacs.__main__ import ExperimentServer
 
-from blacs.shot_execution import ShotExecutor
+from blacs.shot_execution import PublishedStatus, ShotExecutor
 
 
 class FakeTextWidget(object):
@@ -116,9 +116,7 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     executor._runmanager_online = ''
     executor.failure_reason = None
     executor.local_error = None
-    executor.status_text = ''
-    executor.status_shot_filepath = None
-    executor.status_shot_id = None
+    executor.published_status = PublishedStatus('', None, None)
     executor.last_opened_shots_folder = ''
     executor.master_pseudoclock = None
     # The shot loop's thread. __init__ starts it; an executor built here has no
