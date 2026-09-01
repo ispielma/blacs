@@ -42,26 +42,6 @@ class FakeRunmanager(object):
         return [args for name, args in self.calls if name == method_name]
 
 
-class ExecutorReadDuringWrites(ShotExecutor):
-    """A ShotExecutor that reads its own snapshot after each attribute write.
-
-    Threads switch between bytecodes, so the states another thread can catch
-    this object in are exactly the ones each attribute write leaves behind.
-    Reading there covers every interleaving a status query could land on
-    without racing for one, and without naming the attributes, which is the
-    thing under test.
-
-    Nothing is recorded until a list is put in ``_snapshots_seen`` behind this
-    hook's back, so that a test's own setup writes are not observed.
-    """
-
-    def __setattr__(self, name, value):
-        object.__setattr__(self, name, value)
-        seen = self.__dict__.get('_snapshots_seen')
-        if seen is not None:
-            seen.append(self.get_status_snapshot())
-
-
 class StatusSnapshotTests(unittest.TestCase):
     """What BLACS publishes about itself for a runmanager user to read."""
 
@@ -186,6 +166,27 @@ class SnapshotDuringCompletionTests(unittest.TestCase):
         self.assertIsNone(snapshot['shot_id'])
 
 
+class ExecutorReadDuringWrites(ShotExecutor):
+    """A ShotExecutor that reads its own snapshot after each attribute write.
+
+    Threads switch between bytecodes, so the states another thread can catch
+    this object in are exactly the ones each attribute write leaves behind.
+    Reading there covers every interleaving a status query could land on
+    without racing for one, and without naming the attributes, which is the
+    thing under test.
+
+    Recording starts when a list is put in ``_snapshots_seen`` behind this
+    hook's back, and an executor with none is left alone: the hook is armed
+    once the state under test has been set up, never before.
+    """
+
+    def __setattr__(self, name, value):
+        object.__setattr__(self, name, value)
+        seen = self.__dict__.get('_snapshots_seen')
+        if seen is not None:
+            seen.append(self.get_status_snapshot())
+
+
 class SnapshotIsOneStatusTests(unittest.TestCase):
     """A snapshot must describe one status, not the seam between two.
 
@@ -202,16 +203,17 @@ class SnapshotIsOneStatusTests(unittest.TestCase):
 
     def test_a_reader_between_the_writes_never_sees_two_statuses_mixed(self):
         executor = make_executor()
-        executor.__class__ = ExecutorReadDuringWrites
         executor._current_shot_id = 'shot-1'
         executor.set_status('Running...', '/tmp/shot_a.h5')
         before = executor.get_status_snapshot()
-
         executor._current_shot_id = 'shot-2'
+
+        # Armed here, with the first status published and the second one's id
+        # in place, so that what is recorded is only the writes under test:
         seen = []
+        executor.__class__ = ExecutorReadDuringWrites
         object.__setattr__(executor, '_snapshots_seen', seen)
         executor.set_status('Saving data...', '/tmp/shot_b.h5')
-        object.__setattr__(executor, '_snapshots_seen', None)
         after = executor.get_status_snapshot()
 
         self.assertNotEqual(
