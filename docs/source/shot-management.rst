@@ -194,7 +194,9 @@ the work waiting below it. Running is simply what that row looks like — being
 above the rule is what says BLACS was given the shot, so it needs no colour of
 its own. One colour is used, for the one case that is an exception: the row
 turns red once the shot has come back without running, and is waiting for an
-operator. It is a row rather than a caption above the table so that
+operator. A shot that never compiled is red too, but below the rule with the
+waiting work, because it never went to BLACS: the reserved row says what the
+apparatus was given, and a file that failed to compile in runmanager was not. It is a row rather than a caption above the table so that
 it carries the same columns as everything else, and it is there whether or not
 BLACS has a shot, saying so when it does not, so the queue below it never
 shifts.
