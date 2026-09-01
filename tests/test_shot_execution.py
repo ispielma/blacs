@@ -190,6 +190,33 @@ def offer(shot_id, path):
     return {'state': 'shot', 'shot_id': shot_id, 'path': path}
 
 
+NOTHING_OFFERED = (
+    # The four ways an exchange can come back without a shot: a runmanager
+    # whose queue its own user has paused, one with nothing queued -- or whose
+    # next shot is still compiling, which looks the same from here -- one we
+    # cannot reach at all, and one whose reply we could not make sense of.
+    #
+    # Each case gives what runmanager answered, whether we reached it, the
+    # state the exchange reports for it, and what BLACS then says it is doing.
+    (
+        'a paused queue',
+        {'state': 'paused', 'shot_id': None, 'path': None},
+        True,
+        'paused',
+        'Runmanager queue paused',
+    ),
+    (
+        'nothing to offer',
+        {'state': 'none', 'shot_id': None, 'path': None},
+        True,
+        'none',
+        'Idle',
+    ),
+    ('an unreachable runmanager', None, False, 'none', 'Runmanager unavailable'),
+    ('a reply we cannot read', 'not a response at all', True, 'none', 'Idle'),
+)
+
+
 class ExchangeTests(unittest.TestCase):
     def test_exchange_reports_the_finished_shot_and_takes_the_next_one(self):
         executor = make_executor()
@@ -240,37 +267,22 @@ class ExchangeTests(unittest.TestCase):
         outcome, _ = runmanager.sent('queue_exchange')[0]
         self.assertEqual(outcome['shot_id'], 'shot-1')
 
-    def test_no_shot_offered_leaves_blacs_with_nothing_to_run(self):
-        executor = make_executor()
-        executor.runmanager_rpc = FakeRunmanager({'state': 'none', 'shot_id': None, 'path': None})
-        response, reached = executor.exchange_with_runmanager(True)
-        self.assertEqual(response, {'state': 'none', 'shot_id': None, 'path': None})
-        self.assertTrue(reached)
+    def test_only_runmanager_saying_it_is_paused_makes_it_paused(self):
+        # An exchange that came back with no shot says which of the four ways
+        # it was, so that the shot loop can say why no queued work is arriving.
+        # Only runmanager's own answer may say paused: a runmanager we never
+        # reached, and one whose reply we could not read, have told us nothing
+        # about their queue.
+        for description, answer, was_reached, state, _ in NOTHING_OFFERED:
+            with self.subTest(runmanager=description):
+                executor = make_executor()
+                executor.runmanager_rpc = FakeRunmanager(answer, reached=was_reached)
 
-    def test_a_paused_runmanager_is_told_apart_from_one_with_nothing_to_offer(self):
-        executor = make_executor()
-        executor.runmanager_rpc = FakeRunmanager(
-            {'state': 'paused', 'shot_id': None, 'path': None}
-        )
-        response, reached = executor.exchange_with_runmanager(True)
-        self.assertEqual(response['state'], 'paused')
-        self.assertIsNone(response['path'])
-        self.assertTrue(reached)
+                response, reached = executor.exchange_with_runmanager(True)
 
-    def test_a_runmanager_we_could_not_reach_is_not_taken_for_a_paused_one(self):
-        executor = make_executor()
-        executor.runmanager_rpc = FakeRunmanager(reached=False)
-        response, reached = executor.exchange_with_runmanager(True)
-        self.assertNotEqual(response['state'], 'paused')
-        self.assertFalse(reached)
-
-    def test_a_reply_we_cannot_read_is_not_taken_for_a_paused_one(self):
-        executor = make_executor()
-        executor.runmanager_rpc = FakeRunmanager('not a response at all')
-        response, reached = executor.exchange_with_runmanager(True)
-        self.assertNotEqual(response['state'], 'paused')
-        self.assertIsNone(response['path'])
-        self.assertTrue(reached)
+                self.assertEqual(response['state'], state)
+                self.assertIsNone(response['path'], 'and no shot came with it')
+                self.assertIs(reached, was_reached)
 
     def test_only_a_shot_runmanager_offered_has_an_outcome_to_report(self):
         executor = make_executor()
@@ -376,18 +388,6 @@ class ShotLoopTests(ShotLoopFixture, unittest.TestCase):
         self.assertEqual(executor.get_status(), 'Not requesting shots')
 
 
-NOTHING_OFFERED = (
-    # A runmanager whose queue its own user has paused, one with nothing
-    # queued -- or whose next shot is still compiling, which looks the same
-    # from here -- one we cannot reach at all, and one whose reply we could not
-    # make sense of:
-    ('a paused queue', {'state': 'paused', 'shot_id': None, 'path': None}, True),
-    ('nothing to offer', {'state': 'none', 'shot_id': None, 'path': None}, True),
-    ('an unreachable runmanager', None, False),
-    ('a reply we cannot read', 'not a response at all', True),
-)
-
-
 class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
     """A runmanager offering no shot is not telling this apparatus to stop.
 
@@ -399,7 +399,7 @@ class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
     """
 
     def test_no_shot_offered_never_stops_blacs_requesting_shots(self):
-        for description, response, reached in NOTHING_OFFERED:
+        for description, response, reached, _, _ in NOTHING_OFFERED:
             with self.subTest(runmanager=description):
                 executor, _ = self.make_looping_executor(response, reached=reached)
                 executor._requesting_shots = True
@@ -415,7 +415,7 @@ class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
                 )
 
     def test_no_shot_offered_falls_back_to_the_local_override_shot(self):
-        for description, response, reached in NOTHING_OFFERED:
+        for description, response, reached, _, _ in NOTHING_OFFERED:
             with self.subTest(runmanager=description):
                 executor, _ = self.make_looping_executor(response, reached=reached)
                 executor._requesting_shots = True
@@ -437,12 +437,7 @@ class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
                 self.assertTrue(taken_up[0].endswith('override.h5'))
 
     def test_status_says_why_no_queued_work_is_arriving(self):
-        for description, response, reached, status in (
-            NOTHING_OFFERED[0] + ('Runmanager queue paused',),
-            NOTHING_OFFERED[1] + ('Idle',),
-            NOTHING_OFFERED[2] + ('Runmanager unavailable',),
-            NOTHING_OFFERED[3] + ('Idle',),
-        ):
+        for description, response, reached, _, status in NOTHING_OFFERED:
             with self.subTest(runmanager=description):
                 executor, _ = self.make_looping_executor(response, reached=reached)
                 executor._requesting_shots = True

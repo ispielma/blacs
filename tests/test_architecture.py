@@ -119,7 +119,9 @@ class WhatBlacsWillAnswerTests(unittest.TestCase):
     def test_blacs_offers_runmanager_nothing_that_changes_it(self):
         # ExperimentServer.handler dispatches whatever handle_<command> method
         # it finds, so the inventory of those methods is the whole surface a
-        # remote runmanager can reach. One read-only question, and no more.
+        # remote runmanager can reach. One read-only question, and no more --
+        # which is also what keeps the superseded handoff commands from coming
+        # back through this server, since they too would be handle_ methods.
         offered = [name for name in dir(ExperimentServer) if name.startswith('handle_')]
         if offered != ['handle_get_status']:
             fail(
@@ -133,16 +135,6 @@ class WhatBlacsWillAnswerTests(unittest.TestCase):
                 'Answering what BLACS is doing stays allowed -- that is what '
                 'get_status is for.',
             )
-
-    def test_a_superseded_command_is_not_among_them(self):
-        back = sorted(
-            command
-            for command in SUPERSEDED_COMMANDS
-            if hasattr(ExperimentServer, 'handle_' + command)
-        )
-        self.assertEqual(
-            back, [], 'the old handoff must not come back through BLACS\'s server'
-        )
 
 
 if __name__ == '__main__':
