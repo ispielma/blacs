@@ -39,15 +39,16 @@ QPushButton:hover {
  }
 
 QPushButton:checked {
-     background-color: palette(window);
+     background-color: palette(highlight);
+     color: palette(highlighted-text);
      border: 1px solid palette(dark);
      border-radius: 3px;
  }
 
 QPushButton:hover:checked {
-     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                       stop: 0 palette(window), stop: 1 palette(light));
-     border: 1px solid palette(dark);
+     background-color: palette(highlight);
+     color: palette(highlighted-text);
+     border: 1px solid palette(highlighted-text);
      border-radius: 3px;
  }
 
@@ -134,7 +135,250 @@ QToolButton:hover:checked {
      </layout>
     </item>
     <item>
-     <widget class="QSplitter" name="main_splitter">
+      <widget class="QWidget" name="verticalLayoutWidget_2">
+       <layout class="QGridLayout" name="gridLayout" columnstretch="0,0">
+          <item row="0" column="1">
+           <layout class="QHBoxLayout" name="horizontalLayout">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QFrame" name="shot_controls_frame">
+              <property name="frameShape">
+               <enum>QFrame::StyledPanel</enum>
+              </property>
+              <layout class="QVBoxLayout" name="verticalLayout">
+               <property name="leftMargin">
+                <number>6</number>
+               </property>
+               <property name="topMargin">
+                <number>6</number>
+               </property>
+               <property name="rightMargin">
+                <number>6</number>
+               </property>
+               <property name="bottomMargin">
+                <number>6</number>
+               </property>
+               <item>
+                <layout class="QHBoxLayout" name="shot_control_buttons_horizontalLayout">
+                 <property name="spacing">
+                  <number>6</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <item>
+                  <widget class="QPushButton" name="shot_request_button">
+                   <property name="focusPolicy">
+                    <enum>Qt::NoFocus</enum>
+                   </property>
+                   <property name="toolTip">
+                    <string>Request shots from runmanager, and run the local override shot when it has none</string>
+                   </property>
+                   <property name="text">
+                    <string>Request shots</string>
+                   </property>
+                   <property name="icon">
+                    <iconset>
+                     <normaloff>:/qtutils/fugue/control-stop-square.png</normaloff>
+                     <normalon>:/qtutils/fugue/control.png</normalon>
+                    </iconset>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                   <property name="checked">
+                    <bool>false</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="shot_abort_button">
+                   <property name="enabled">
+                    <bool>false</bool>
+                   </property>
+                   <property name="focusPolicy">
+                    <enum>Qt::NoFocus</enum>
+                   </property>
+                   <property name="toolTip">
+                    <string>Abort current shot in progress</string>
+                   </property>
+                   <property name="text">
+                    <string>Abort</string>
+                   </property>
+                   <property name="icon">
+                    <iconset>
+                     <normaloff>:/qtutils/fugue/cross-octagon.png</normaloff>:/qtutils/fugue/cross-octagon.png</iconset>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="shot_status_verticalLayout">
+              <property name="spacing">
+               <number>3</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <item>
+               <layout class="QHBoxLayout" name="horizontalLayout_2">
+                <item>
+                 <spacer name="horizontalSpacer">
+                  <property name="orientation">
+                   <enum>Qt::Horizontal</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>40</width>
+                    <height>20</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+                <item>
+                 <widget class="QLabel" name="runmanager_status_label">
+                  <property name="text">
+                   <string>Runmanager</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="runmanager_online">
+                  <property name="text">
+                   <string/>
+                  </property>
+                  <property name="pixmap">
+                   <pixmap>:/qtutils/fugue/status-offline.png</pixmap>
+                  </property>
+                  <property name="scaledContents">
+                   <bool>false</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="horizontalSpacer_2">
+                  <property name="orientation">
+                   <enum>Qt::Horizontal</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>40</width>
+                    <height>20</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <widget class="QLabel" name="shot_status">
+                <property name="text">
+                 <string>[Shot status]</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="running_shot_name">
+                <property name="text">
+                 <string>&lt;b&gt;[running_shot.h5]&lt;/b&gt;</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QFrame" name="local_override_frame">
+              <property name="frameShape">
+               <enum>QFrame::StyledPanel</enum>
+              </property>
+              <layout class="QHBoxLayout" name="local_override_horizontalLayout">
+               <property name="leftMargin">
+                <number>6</number>
+               </property>
+               <property name="topMargin">
+                <number>6</number>
+               </property>
+               <property name="rightMargin">
+                <number>6</number>
+               </property>
+               <property name="bottomMargin">
+                <number>6</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="local_override_label">
+                 <property name="text">
+                  <string>Local override shot</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="local_override_lineEdit">
+                 <property name="toolTip">
+                  <string>Local shot file to run if runmanager does not provide a shot</string>
+                 </property>
+                 <property name="placeholderText">
+                  <string>Local override shot</string>
+                 </property>
+                 <property name="clearButtonEnabled">
+                  <bool>true</bool>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QToolButton" name="local_override_browse_button">
+                 <property name="toolTip">
+                  <string>Browse for local override shot</string>
+                 </property>
+                 <property name="text">
+                  <string/>
+                 </property>
+                 <property name="icon">
+                  <iconset>
+                   <normaloff>:/qtutils/fugue/folder-open.png</normaloff>:/qtutils/fugue/folder-open.png</iconset>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+      </widget>
+    </item>
+    <item>
+      <widget class="QSplitter" name="tab_horizontal_splitter">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
+       </property>
+       <widget class="QSplitter" name="tab_top_vertical_splitter">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
           <horstretch>0</horstretch>
@@ -142,347 +386,97 @@ QToolButton:hover:checked {
          </sizepolicy>
         </property>
         <property name="orientation">
-         <enum>Qt::Vertical</enum>
+         <enum>Qt::Horizontal</enum>
         </property>
-        <widget class="QWidget" name="verticalLayoutWidget_2">
-         <layout class="QGridLayout" name="gridLayout" columnstretch="0,0">
-            <item row="0" column="1">
-             <layout class="QHBoxLayout" name="horizontalLayout">
-              <property name="spacing">
-               <number>0</number>
-              </property>
-              <item>
-               <widget class="QFrame" name="shot_controls_frame">
-                <property name="frameShape">
-                 <enum>QFrame::StyledPanel</enum>
-                </property>
-                <layout class="QVBoxLayout" name="verticalLayout">
-                 <property name="leftMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="topMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="rightMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="bottomMargin">
-                  <number>6</number>
-                 </property>
-                 <item>
-                  <layout class="QHBoxLayout" name="shot_control_buttons_horizontalLayout">
-                   <property name="spacing">
-                    <number>6</number>
-                   </property>
-                   <property name="leftMargin">
-                    <number>0</number>
-                   </property>
-                   <property name="topMargin">
-                    <number>0</number>
-                   </property>
-                   <property name="rightMargin">
-                    <number>0</number>
-                   </property>
-                   <item>
-                    <widget class="QPushButton" name="shot_pause_button">
-                     <property name="focusPolicy">
-                      <enum>Qt::NoFocus</enum>
-                     </property>
-                     <property name="toolTip">
-                      <string>Pause shot execution</string>
-                     </property>
-                     <property name="text">
-                      <string>Pause</string>
-                     </property>
-                     <property name="icon">
-                      <iconset>
-                       <normaloff>:/qtutils/fugue/control-pause.png</normaloff>:/qtutils/fugue/control-pause.png</iconset>
-                     </property>
-                     <property name="checkable">
-                      <bool>true</bool>
-                     </property>
-                     <property name="checked">
-                      <bool>false</bool>
-                     </property>
-                    </widget>
-                   </item>
-                   <item>
-                    <widget class="QPushButton" name="shot_abort_button">
-                     <property name="enabled">
-                      <bool>false</bool>
-                     </property>
-                     <property name="focusPolicy">
-                      <enum>Qt::NoFocus</enum>
-                     </property>
-                     <property name="toolTip">
-                      <string>Abort current shot in progress</string>
-                     </property>
-                     <property name="text">
-                      <string>Abort</string>
-                     </property>
-                     <property name="icon">
-                      <iconset>
-                       <normaloff>:/qtutils/fugue/cross-octagon.png</normaloff>:/qtutils/fugue/cross-octagon.png</iconset>
-                     </property>
-                    </widget>
-                   </item>
-                  </layout>
-                 </item>
-                </layout>
-               </widget>
-              </item>
-              <item>
-               <layout class="QVBoxLayout" name="shot_status_verticalLayout">
-                <property name="spacing">
-                 <number>3</number>
-                </property>
-                <property name="topMargin">
-                 <number>0</number>
-                </property>
-                <item>
-                 <layout class="QHBoxLayout" name="horizontalLayout_2">
-                  <item>
-                   <spacer name="horizontalSpacer">
-                    <property name="orientation">
-                     <enum>Qt::Horizontal</enum>
-                    </property>
-                    <property name="sizeHint" stdset="0">
-                     <size>
-                      <width>40</width>
-                      <height>20</height>
-                     </size>
-                    </property>
-                   </spacer>
-                  </item>
-                  <item>
-                   <widget class="QLabel" name="runmanager_status_label">
-                    <property name="text">
-                     <string>Runmanager</string>
-                    </property>
-                    <property name="alignment">
-                     <set>Qt::AlignCenter</set>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QLabel" name="runmanager_online">
-                    <property name="text">
-                     <string/>
-                    </property>
-                    <property name="pixmap">
-                     <pixmap>:/qtutils/fugue/status-offline.png</pixmap>
-                    </property>
-                    <property name="scaledContents">
-                     <bool>false</bool>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <spacer name="horizontalSpacer_2">
-                    <property name="orientation">
-                     <enum>Qt::Horizontal</enum>
-                    </property>
-                    <property name="sizeHint" stdset="0">
-                     <size>
-                      <width>40</width>
-                      <height>20</height>
-                     </size>
-                    </property>
-                   </spacer>
-                  </item>
-                 </layout>
-                </item>
-                <item>
-                 <widget class="QLabel" name="shot_status">
-                  <property name="text">
-                   <string>[Shot status]</string>
-                  </property>
-                  <property name="alignment">
-                   <set>Qt::AlignCenter</set>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QLabel" name="running_shot_name">
-                  <property name="text">
-                   <string>&lt;b&gt;[running_shot.h5]&lt;/b&gt;</string>
-                  </property>
-                  <property name="alignment">
-                   <set>Qt::AlignCenter</set>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
-              </item>
-              <item>
-               <widget class="QFrame" name="local_override_frame">
-                <property name="frameShape">
-                 <enum>QFrame::StyledPanel</enum>
-                </property>
-                <layout class="QHBoxLayout" name="local_override_horizontalLayout">
-                 <property name="leftMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="topMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="rightMargin">
-                  <number>6</number>
-                 </property>
-                 <property name="bottomMargin">
-                  <number>6</number>
-                 </property>
-                 <item>
-                  <widget class="QLabel" name="local_override_label">
-                   <property name="text">
-                    <string>Local override shot</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QLineEdit" name="local_override_lineEdit">
-                   <property name="toolTip">
-                    <string>Local shot file to run if runmanager does not provide a shot</string>
-                   </property>
-                   <property name="placeholderText">
-                    <string>Local override shot</string>
-                   </property>
-                   <property name="clearButtonEnabled">
-                    <bool>true</bool>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QToolButton" name="local_override_browse_button">
-                   <property name="toolTip">
-                    <string>Browse for local override shot</string>
-                   </property>
-                   <property name="text">
-                    <string/>
-                   </property>
-                   <property name="icon">
-                    <iconset>
-                     <normaloff>:/qtutils/fugue/folder-open.png</normaloff>:/qtutils/fugue/folder-open.png</iconset>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
-               </widget>
-              </item>
-             </layout>
-            </item>
-           </layout>
+        <widget class="QWidget" name="widget_2" native="true">
+         <layout class="QVBoxLayout" name="verticalLayout_3">
+          <property name="leftMargin">
+           <number>6</number>
+          </property>
+          <property name="topMargin">
+           <number>6</number>
+          </property>
+          <property name="rightMargin">
+           <number>6</number>
+          </property>
+          <property name="bottomMargin">
+           <number>6</number>
+          </property>
+          <item>
+           <layout class="QVBoxLayout" name="tab_container_0"/>
+          </item>
+         </layout>
         </widget>
-        <widget class="QSplitter" name="tab_horizontal_splitter">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
-         </property>
-         <widget class="QSplitter" name="tab_top_vertical_splitter">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
+        <widget class="QWidget" name="widget_5" native="true">
+         <layout class="QVBoxLayout" name="verticalLayout_4">
+          <property name="leftMargin">
+           <number>6</number>
           </property>
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
+          <property name="topMargin">
+           <number>6</number>
           </property>
-          <widget class="QWidget" name="widget_2" native="true">
-           <layout class="QVBoxLayout" name="verticalLayout_3">
-            <property name="leftMargin">
-             <number>6</number>
-            </property>
-            <property name="topMargin">
-             <number>6</number>
-            </property>
-            <property name="rightMargin">
-             <number>6</number>
-            </property>
-            <property name="bottomMargin">
-             <number>6</number>
-            </property>
-            <item>
-             <layout class="QVBoxLayout" name="tab_container_0"/>
-            </item>
-           </layout>
-          </widget>
-          <widget class="QWidget" name="widget_5" native="true">
-           <layout class="QVBoxLayout" name="verticalLayout_4">
-            <property name="leftMargin">
-             <number>6</number>
-            </property>
-            <property name="topMargin">
-             <number>6</number>
-            </property>
-            <property name="rightMargin">
-             <number>6</number>
-            </property>
-            <property name="bottomMargin">
-             <number>6</number>
-            </property>
-            <item>
-             <layout class="QVBoxLayout" name="tab_container_1"/>
-            </item>
-           </layout>
-          </widget>
-         </widget>
-         <widget class="QSplitter" name="tab_bottom_vertical_splitter">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
+          <property name="rightMargin">
+           <number>6</number>
           </property>
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
+          <property name="bottomMargin">
+           <number>6</number>
           </property>
-          <widget class="QWidget" name="widget_3" native="true">
-           <layout class="QVBoxLayout" name="verticalLayout_6">
-            <property name="leftMargin">
-             <number>6</number>
-            </property>
-            <property name="topMargin">
-             <number>6</number>
-            </property>
-            <property name="rightMargin">
-             <number>6</number>
-            </property>
-            <property name="bottomMargin">
-             <number>6</number>
-            </property>
-            <item>
-             <layout class="QVBoxLayout" name="tab_container_2"/>
-            </item>
-           </layout>
-          </widget>
-          <widget class="QWidget" name="widget_6" native="true">
-           <layout class="QVBoxLayout" name="verticalLayout_8">
-            <property name="leftMargin">
-             <number>6</number>
-            </property>
-            <property name="topMargin">
-             <number>6</number>
-            </property>
-            <property name="rightMargin">
-             <number>6</number>
-            </property>
-            <property name="bottomMargin">
-             <number>6</number>
-            </property>
-            <item>
-             <layout class="QVBoxLayout" name="tab_container_3"/>
-            </item>
-           </layout>
-          </widget>
-         </widget>
+          <item>
+           <layout class="QVBoxLayout" name="tab_container_1"/>
+          </item>
+         </layout>
         </widget>
-     </widget>
+       </widget>
+       <widget class="QSplitter" name="tab_bottom_vertical_splitter">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <widget class="QWidget" name="widget_3" native="true">
+         <layout class="QVBoxLayout" name="verticalLayout_6">
+          <property name="leftMargin">
+           <number>6</number>
+          </property>
+          <property name="topMargin">
+           <number>6</number>
+          </property>
+          <property name="rightMargin">
+           <number>6</number>
+          </property>
+          <property name="bottomMargin">
+           <number>6</number>
+          </property>
+          <item>
+           <layout class="QVBoxLayout" name="tab_container_2"/>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="widget_6" native="true">
+         <layout class="QVBoxLayout" name="verticalLayout_8">
+          <property name="leftMargin">
+           <number>6</number>
+          </property>
+          <property name="topMargin">
+           <number>6</number>
+          </property>
+          <property name="rightMargin">
+           <number>6</number>
+          </property>
+          <property name="bottomMargin">
+           <number>6</number>
+          </property>
+          <item>
+           <layout class="QVBoxLayout" name="tab_container_3"/>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </widget>
     </item>
    </layout>
   </widget>

@@ -33,6 +33,7 @@ splash.update_text('importing standard library modules')
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 import platform
 import importlib.metadata
@@ -134,7 +135,11 @@ class BLACSWindow(QMainWindow):
                 self.blacs.exiting = True
                 self.blacs.shot_executor.stop()
                 self.blacs.settings.close()
-                experiment_server.shutdown()
+                if experiment_server is not None:
+                    # None while BLACS is still starting. Raising here left
+                    # exiting set with nothing able to clear it, so the window
+                    # could never be closed afterwards.
+                    experiment_server.shutdown()
                 plugins.manager.close_plugins()
 
                 inmain_later(self.blacs.on_save_exit)
@@ -208,10 +213,6 @@ class BLACS(LabscriptApplication):
         self.connection_table_h5file = self.exp_config.get('paths','connection_table_h5')
         self.connection_table_labscript = self.exp_config.get('paths','connection_table_py')
 
-        # Setup the UI
-        self.ui.main_splitter.setStretchFactor(0,0)
-        self.ui.main_splitter.setStretchFactor(1,1)
-
         self.tablist = {}
         self.panes = {}
         self.settings_dict = {}
@@ -221,11 +222,13 @@ class BLACS(LabscriptApplication):
         logger.info('finding connected devices in connection table')
         self.attached_devices = self.connection_table.get_attached_devices()
 
-        # Store the panes in a dictionary for easy access
+        # Store the panes in a dictionary for easy access. The shot controls
+        # are not among them: they sit above the tab splitters rather than in
+        # one, so they take the height they need and the device tabs get the
+        # rest. There is nothing to drag and nothing to remember.
         self.panes['tab_top_vertical_splitter'] = self.ui.tab_top_vertical_splitter
         self.panes['tab_bottom_vertical_splitter'] = self.ui.tab_bottom_vertical_splitter
         self.panes['tab_horizontal_splitter'] = self.ui.tab_horizontal_splitter
-        self.panes['main_splitter'] = self.ui.main_splitter
 
         # Get settings to restore
         logger.info('Loading front panel settings')
@@ -576,10 +579,17 @@ class BLACS(LabscriptApplication):
                     pending_threads[name].join()
                     del pending_threads[name]
                     del self.tablist[name]
-        notifier = self.shot_executor.completion_notifier
-        if not self.tablist and (overdue or not notifier.is_alive()):
-            # All tabs are closed, and the shot executor has finished reporting
-            # outcomes to runmanager or has run out of time to do so.
+        if not self.tablist and (
+            overdue or not self.shot_executor.final_report_pending()
+        ):
+            # All tabs are closed, and the shot executor has told runmanager
+            # how the shot it was holding turned out -- or named the run it
+            # could not deliver, or run out of time to. It makes that report on
+            # its way out of a daemon thread, so quitting has to wait for it;
+            # only for as long as the deadline, because a runmanager that is
+            # not answering must not be able to hold the quit open. Nothing to
+            # report is nothing to wait for, and the shot itself is not lost
+            # either way: it keeps its place in runmanager's queue.
             self.exit_complete = True
             logger.info('quitting')
             return
@@ -609,11 +619,42 @@ class BLACS(LabscriptApplication):
     def on_open_preferences(self,*args,**kwargs):
         self.settings.create_dialog()
 
+# Bound in the startup below, after BLACS itself. Declared here because the
+# close handler reads it as a global and can run before that: the main window
+# is shown partway through startup, which then goes on building device tabs.
+experiment_server = None
+
+
 class ExperimentServer(ZMQServer):
-    def handler(self, h5_filepath):
-        message = self.process(h5_filepath)
+    def handler(self, request_data):
+        """Answer a request on BLACS's one server port.
+
+        A ``[command, args, kwargs]`` request is dispatched to ``handle_<cmd>``,
+        the same convention runmanager's own server uses, so that the two speak
+        one shape to each other. Anything else is still the bare filepath the
+        old direct-submission callers sent, and is still refused."""
+        if isinstance(request_data, (list, tuple)) and len(request_data) == 3:
+            cmd, args, kwargs = request_data
+            if cmd == 'hello':
+                return 'hello'
+            try:
+                return getattr(self, 'handle_' + cmd)(*args, **kwargs)
+            except Exception as e:
+                msg = traceback.format_exc()
+                msg = "BLACS server returned an exception:\n" + msg
+                return e.__class__(msg)
+        message = self.process(request_data)
         logger.info('Request handler: %s ' % message.strip())
         return message
+
+    def handle_get_status(self):
+        """Report what BLACS is doing, for a runmanager user who cannot see it.
+
+        Read-only, and deliberately the only command here: enabling requests,
+        clearing what stopped them, restarting a device and aborting a shot all
+        stay with the operator standing at this apparatus. Not decorated to run
+        on the GUI thread, so that a BLACS busy with a shot still answers."""
+        return app.shot_executor.get_status_snapshot()
 
     @inmain_decorator(wait_for_return=True)
     def process(self,h5_filepath):
@@ -663,10 +704,6 @@ if __name__ == '__main__':
 
     port = int(exp_config.get('ports', 'blacs'))
 
-    # Start experiment server
-    splash.update_text('starting experiment server')
-    experiment_server = ExperimentServer(port)
-
     # Create Connection Table object
     splash.update_text('loading connection table')
     logger.info('About to load connection table: %s'%exp_config.get('paths','connection_table_h5'))
@@ -681,6 +718,14 @@ if __name__ == '__main__':
     app = BLACS(qapplication)
 
     logger.info('BLACS instantiated')
+
+    # Start experiment server. After BLACS itself, because the server answers
+    # questions about it: one started earlier would spend the connection table
+    # load telling a runmanager that this BLACS had failed, rather than that it
+    # was still starting.
+    splash.update_text('starting experiment server')
+    experiment_server = ExperimentServer(port)
+
     splash.hide()
 
     def execute_program():
