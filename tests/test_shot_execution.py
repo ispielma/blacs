@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import types
 import unittest
 
@@ -85,8 +86,78 @@ def make_executor():
     executor._current_shot_id = None
     executor._next_rep_index = {}
     executor.local_error = None
+    executor.status_text = ''
+    executor.status_shot_filepath = None
     executor.last_opened_shots_folder = ''
     return executor
+
+
+class StatusSnapshotTests(unittest.TestCase):
+    """What BLACS publishes about itself for a runmanager user to read."""
+
+    def test_the_snapshot_says_what_blacs_is_doing_and_which_shot(self):
+        executor = make_executor()
+        executor.requesting_shots = True
+        executor._current_shot_id = 'shot-1'
+        executor.set_status('Running (program time: 0.100s)...', '/tmp/shot_a.h5')
+
+        snapshot = executor.get_status_snapshot()
+
+        self.assertEqual(
+            snapshot,
+            {
+                'requesting_shots': True,
+                'status': 'Running (program time: 0.100s)...',
+                'shot_id': 'shot-1',
+                'shot_path': '/tmp/shot_a.h5',
+                'error': None,
+            },
+        )
+
+    def test_the_snapshot_carries_the_reason_requests_stopped(self):
+        executor = make_executor()
+        executor.set_status('Aborted\nRequests stopped')
+        executor.stop_requesting_shots('Aborted')
+
+        snapshot = executor.get_status_snapshot()
+
+        self.assertFalse(snapshot['requesting_shots'])
+        self.assertEqual(snapshot['error'], 'Aborted')
+        self.assertEqual(snapshot['status'], 'Aborted\nRequests stopped')
+        self.assertIsNone(snapshot['shot_path'], 'no shot is running')
+        self.assertIsNone(snapshot['shot_id'])
+
+    def test_the_snapshot_stops_naming_a_shot_once_one_is_over(self):
+        # Whether a shot is under way is read from the published path, so a
+        # status that went on naming the last shot would have runmanager
+        # showing BLACS as running for ever.
+        executor = make_executor()
+        executor.set_status('Running...', '/tmp/shot_a.h5')
+        self.assertEqual(executor.get_status_snapshot()['shot_path'], '/tmp/shot_a.h5')
+
+        executor.set_status('Idle')
+
+        self.assertIsNone(executor.get_status_snapshot()['shot_path'])
+
+    def test_the_snapshot_answers_without_the_gui_thread(self):
+        # A status query arrives on the server thread and has to be answered
+        # while a shot is running and the GUI thread is busy with it. No Qt
+        # event loop runs here, so a snapshot that went through the GUI thread
+        # would never come back at all.
+        executor = make_executor()
+        executor.set_status('Transitioning to buffered...', '/tmp/shot_a.h5')
+        answers = []
+        asker = threading.Thread(
+            target=lambda: answers.append(executor.get_status_snapshot())
+        )
+        asker.daemon = True
+        asker.start()
+        asker.join(timeout=10)
+
+        self.assertFalse(
+            asker.is_alive(), 'a status query must not wait on the GUI thread'
+        )
+        self.assertEqual(answers[0]['status'], 'Transitioning to buffered...')
 
 
 class RequestShotsControlTests(unittest.TestCase):

@@ -1,0 +1,101 @@
+"""Behavioural tests for the status BLACS serves to a remote runmanager.
+
+BLACS already had a server, so these exercise ExperimentServer's handler over
+the same surface a runmanager reaches it through. The server itself binds a
+socket in its constructor, so the handler is called against a stand-in the way
+the runmanager tests call RunManager's own methods.
+"""
+import unittest
+import warnings
+
+with warnings.catch_warnings():
+    # Importing BLACS proper installs labscript_utils.excepthook's warning
+    # logger, which logs through a deprecated call that warns in turn, so any
+    # warning raised while it is installed recurses until the stack runs out.
+    # Nothing here is interested in import-time warnings; catch_warnings puts
+    # the runner's own handler back afterwards.
+    warnings.simplefilter('ignore')
+    from blacs.__main__ import ExperimentServer
+    import blacs.__main__
+
+
+class FakeShotExecutor(object):
+    def __init__(self, snapshot):
+        self.snapshot = snapshot
+        self.requesting_shots = False
+        self.local_error = 'Aborted'
+
+    def get_status_snapshot(self):
+        return dict(self.snapshot)
+
+
+class FakeBLACS(object):
+    def __init__(self, snapshot):
+        self.shot_executor = FakeShotExecutor(snapshot)
+
+
+class FakeExperimentServer(object):
+    """ExperimentServer's own request handling, without binding a port."""
+
+    handler = ExperimentServer.handler
+    handle_get_status = ExperimentServer.handle_get_status
+    process = ExperimentServer.process
+
+
+SNAPSHOT = {
+    'requesting_shots': True,
+    'status': 'Running (program time: 0.100s)...',
+    'shot_id': 'shot-1',
+    'shot_path': '/tmp/shot_a.h5',
+    'error': None,
+}
+
+
+class StatusServerTests(unittest.TestCase):
+    def setUp(self):
+        self.blacs = FakeBLACS(SNAPSHOT)
+        self.real_app = getattr(blacs.__main__, 'app', None)
+        blacs.__main__.app = self.blacs
+        self.server = FakeExperimentServer()
+
+    def tearDown(self):
+        if self.real_app is None:
+            del blacs.__main__.app
+        else:
+            blacs.__main__.app = self.real_app
+
+    def request(self, command, *args, **kwargs):
+        return self.server.handler([command, args, kwargs])
+
+    def test_a_status_request_gets_what_blacs_is_doing(self):
+        self.assertEqual(self.request('get_status'), SNAPSHOT)
+
+    def test_blacs_answers_hello_so_runmanager_can_see_it_is_there(self):
+        self.assertEqual(self.request('hello'), 'hello')
+
+    def test_a_direct_shot_submission_is_still_refused(self):
+        # The old callers sent a bare filepath, and still get told that BLACS
+        # takes its shots from a runmanager queue now rather than being handed
+        # them. Only the new [command, args, kwargs] shape is dispatched.
+        message = self.server.handler('/tmp/shot_a.h5')
+        self.assertIn('no longer accepts direct shot submissions', message)
+
+    def test_an_unknown_command_comes_back_as_an_error(self):
+        response = self.request('make_the_tea')
+        self.assertIsInstance(
+            response, Exception, 'the server answers rather than dying'
+        )
+
+    def test_the_server_offers_nothing_that_changes_blacs(self):
+        # Monitoring only: what stopped requests at this apparatus, the gate
+        # on hardware execution and Abort are the operator's, and no remote
+        # runmanager may reach any of them. The handler dispatches whatever
+        # handle_ method it finds, so what is offered is this list.
+        self.assertEqual(
+            [name for name in dir(ExperimentServer) if name.startswith('handle_')],
+            ['handle_get_status'],
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()

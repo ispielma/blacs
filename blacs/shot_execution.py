@@ -86,6 +86,10 @@ class ShotExecutor(object):
         # carries it to runmanager, and the id of the shot we are running:
         self._pending_outcome = None
         self._current_shot_id = None
+        # What the status labels say, kept where a status query can read it
+        # without the GUI thread. Written only by set_status():
+        self.status_text = ''
+        self.status_shot_filepath = None
         self._next_rep_index = {}
 
         self._logger = logging.getLogger('BLACS.ShotExecutor')
@@ -442,12 +446,38 @@ class ShotExecutor(object):
 
     @inmain_decorator(wait_for_return=True)
     def set_status(self, status_text, shot_filepath=None):
-        self._ui.shot_status.setText(str(status_text))
+        # What the labels say is kept in plain attributes as well, because a
+        # runmanager asking what this BLACS is doing is answered on the server
+        # thread, and must be answered while a shot is running and the GUI
+        # thread is busy with it. This is the only place either is written, so
+        # the labels and what is published cannot drift apart.
+        self.status_text = str(status_text)
+        self.status_shot_filepath = shot_filepath
+        self._ui.shot_status.setText(self.status_text)
         if shot_filepath is not None:
             self._ui.running_shot_name.setText('<b>%s</b>'% str(os.path.basename(shot_filepath)))
         else:
             self._ui.running_shot_name.setText('')
-        
+
+    def get_status_snapshot(self):
+        """Report what this BLACS is doing, for a runmanager user to read.
+
+        Read-only, and read without the GUI thread: every field is a plain
+        attribute, so a busy BLACS still answers. Nothing here may change
+        anything -- the gate on hardware execution, the error that closed it,
+        and Abort all stay with the operator standing at this apparatus.
+
+        The shot's path goes out shared-drive-agnostic, as an outcome does, so
+        that a runmanager on another machine can read it."""
+        shot_path = self.status_shot_filepath
+        return {
+            'requesting_shots': bool(self._requesting_shots),
+            'status': self.status_text,
+            'shot_id': self._current_shot_id,
+            'shot_path': path_to_agnostic(shot_path) if shot_path else None,
+            'error': self.local_error,
+        }
+
     @inmain_decorator(wait_for_return=True)
     def get_status(self):
         return self._ui.shot_status.text()
