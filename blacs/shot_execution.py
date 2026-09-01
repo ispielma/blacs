@@ -70,6 +70,11 @@ def tempfilename(prefix='BLACS-temp-', suffix='.h5'):
 
 class ShotExecutor(object):
 
+    # How long one last exchange may take to hand over an outcome held when
+    # the shot loop ends. Bounded, because it runs on the way out: a runmanager
+    # that is not answering must not be able to hold the quit open.
+    OUTCOME_FLUSH_TIMEOUT = 2
+
     def __init__(self, BLACS, ui):
         self._ui = ui
         self.BLACS = BLACS
@@ -299,7 +304,7 @@ class ShotExecutor(object):
         """Stop shot execution. Called from the GUI thread as BLACS closes."""
         self.manager_running = False
 
-    def exchange_with_runmanager(self, request_shot):
+    def exchange_with_runmanager(self, request_shot, timeout=None):
         """Report the finished shot's outcome, and ask for the next shot.
 
         One message does both, so that runmanager retires the row it offered
@@ -323,7 +328,9 @@ class ShotExecutor(object):
             request_shot,
             timeout=self.BLACS.exp_config.getfloat(
                 'timeouts', 'communication_timeout', fallback=60
-            ),
+            )
+            if timeout is None
+            else timeout,
         )
         if not reached:
             return no_shot, False
@@ -536,6 +543,43 @@ class ShotExecutor(object):
             self.stop_requesting_shots(
                 'Shot execution stopped on an unhandled error; restart BLACS')
             self.set_status("Shot execution stopped\nSee the log; restart BLACS")
+        finally:
+            self._deliver_or_name_held_outcome()
+
+    def _deliver_or_name_held_outcome(self):
+        """Hand over an outcome held when the loop ends, or name the run lost.
+
+        BLACS keeps an outcome until runmanager takes it, so the loop ending
+        with one in hand is the one way it can be dropped. One last exchange
+        delivers it, asking for nothing and bounded by OUTCOME_FLUSH_TIMEOUT,
+        because this runs on the way out.
+
+        If it still cannot be delivered the shot is not lost: the row is in
+        runmanager's queue marked running, and the next BLACS to ask is offered
+        it again under the same id, a request carrying no outcome for it being
+        proof that nobody is running it. What is lost is this run, which
+        reaches neither runmanager nor lyse and will be run again -- so say
+        which shot, and how it went.
+
+        Called from the finally above rather than the tail of the loop. At the
+        tail it was skipped by exactly the path that strands an outcome most
+        reliably: an error the loop could not handle, which is caught here."""
+        if self._pending_outcome is None:
+            return
+        try:
+            self.exchange_with_runmanager(False, timeout=self.OUTCOME_FLUSH_TIMEOUT)
+        except Exception:
+            self._logger.exception('Could not hand over a held shot outcome.')
+        if self._pending_outcome is None:
+            return
+        self._logger.warning(
+            'Runmanager was never told that shot %s %s%s.',
+            self._pending_outcome['shot_id'],
+            self._pending_outcome['status'],
+            ': %s' % self._pending_outcome['message']
+            if self._pending_outcome['message']
+            else '',
+        )
 
     def _manage(self):
         logger = logging.getLogger('BLACS.shot_executor.thread')
@@ -1110,21 +1154,4 @@ class ShotExecutor(object):
             ##########################################################################################################################################
             path = None
             self.set_status("Idle")
-        if self._pending_outcome is not None:
-            # BLACS is closing with an outcome it never got to report. The row
-            # is still in runmanager's queue, marked running, but it is no
-            # longer stranded there: the next BLACS to ask that runmanager for
-            # work is offered the same row again, under the same id, because a
-            # request carrying no outcome for it proves nobody is running it.
-            # So the shot itself is not lost -- what is lost is this run of it,
-            # which reaches neither runmanager nor lyse and will be run again.
-            # Say which shot, and how it went.
-            logger.warning(
-                'Runmanager was never told that shot %s %s%s.',
-                self._pending_outcome['shot_id'],
-                self._pending_outcome['status'],
-                ': %s' % self._pending_outcome['message']
-                if self._pending_outcome['message']
-                else '',
-            )
         logger.info('Stopping')

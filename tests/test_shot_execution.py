@@ -217,6 +217,103 @@ class SnapshotDuringCompletionTests(unittest.TestCase):
         self.assertIsNone(snapshot['shot_id'])
 
 
+class HeldOutcomeWhenTheLoopEndsTests(unittest.TestCase):
+    """An outcome BLACS is holding when the shot loop stops.
+
+    BLACS keeps an outcome until runmanager takes it. If the loop ends while
+    one is held it used to be dropped: runmanager never learned the shot
+    completed, its row stayed marked running, the shot was run again, and the
+    first run's file was left on disk with real data that nothing analyses.
+
+    Development delivered it, on a bounded deadline, from a thread of its own.
+    The bound is the whole point -- it is what stops a runmanager that is not
+    answering holding up the quit.
+
+    And the line that names an outcome which still could not be delivered has
+    to run however the loop ended. At the tail of the loop it was skipped by
+    exactly the path that stranded outcomes most reliably: an error the loop
+    could not handle, which is caught a frame above it.
+    """
+
+    def setUp(self):
+        self.real_raise = shot_execution.zprocess.raise_exception_in_thread
+        shot_execution.zprocess.raise_exception_in_thread = lambda info: None
+        self.addCleanup(
+            setattr,
+            shot_execution.zprocess,
+            'raise_exception_in_thread',
+            self.real_raise,
+        )
+
+    def executor_holding_an_outcome(self, delivers=True):
+        executor = make_executor()
+        executor._pending_outcome = {
+            'shot_id': 'shot-1',
+            'status': 'completed',
+            'message': '',
+        }
+        self.exchanges = []
+
+        def exchange(request_shot, timeout=None):
+            self.exchanges.append((request_shot, timeout))
+            if delivers:
+                executor._pending_outcome = None
+            return {'state': 'none', 'shot_id': None, 'path': None}, delivers
+
+        executor.exchange_with_runmanager = exchange
+        return executor
+
+    def test_a_held_outcome_is_delivered_when_the_loop_ends(self):
+        executor = self.executor_holding_an_outcome()
+        executor._manage = lambda: None
+
+        executor.manage()
+
+        self.assertEqual(len(self.exchanges), 1, 'one last exchange')
+        request_shot, timeout = self.exchanges[0]
+        self.assertFalse(request_shot, 'it asks for nothing; it is only delivering')
+        self.assertEqual(
+            timeout,
+            executor.OUTCOME_FLUSH_TIMEOUT,
+            'and it is bounded, so a runmanager that is not answering cannot '
+            'hold the quit open',
+        )
+        self.assertIsNone(executor._pending_outcome)
+
+    def test_it_is_delivered_even_when_the_loop_died_on_an_error(self):
+        executor = self.executor_holding_an_outcome()
+
+        def boom():
+            raise RuntimeError('a device tab vanished')
+
+        executor._manage = boom
+
+        executor.manage()
+
+        self.assertEqual(
+            len(self.exchanges),
+            1,
+            'the path that strands an outcome most reliably is the one that '
+            'must not skip delivering it',
+        )
+
+    def test_an_outcome_that_cannot_be_delivered_names_its_shot(self):
+        executor = self.executor_holding_an_outcome(delivers=False)
+
+        def boom():
+            raise RuntimeError('a device tab vanished')
+
+        executor._manage = boom
+
+        with self.assertLogs('test.shot_executor', level='WARNING') as captured:
+            executor.manage()
+
+        self.assertTrue(
+            any('shot-1' in line for line in captured.output),
+            'whoever reads the log has to be able to tell which run was lost',
+        )
+
+
 class RequestShotsControlTests(unittest.TestCase):
     def test_request_shots_is_not_part_of_saved_state(self):
         executor = make_executor()
