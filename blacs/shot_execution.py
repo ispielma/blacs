@@ -646,19 +646,23 @@ class ShotExecutor(object):
                 if path is None:
                     logger.error(message.strip())
                     if shot_id is not None:
-                        # A shot we cannot run is reported as rejected on the
-                        # next exchange. Runmanager keeps the row and decides
-                        # what becomes of it; stop requesting until an operator
-                        # has seen why.
+                        # A shot we cannot read is reported as rejected on the
+                        # next exchange, and that is the whole of our part in
+                        # it. Requests are deliberately left on: the shot is
+                        # unusable, not the apparatus, and stopping here would
+                        # need someone standing at this machine to start it
+                        # again over a file that is runmanager's to fix.
+                        # Runmanager holds the row and stops offering it, so
+                        # the next exchange brings nothing and we run our own
+                        # shot until it is dealt with there.
                         self.report_shot_outcome(None, 'rejected', message.strip())
-                        self.set_status("Rejected shot from runmanager\nRequests stopped")
+                        self.set_status("Rejected shot from runmanager")
                     else:
-                        # The local override shot is nothing to do with
-                        # runmanager, so there is no row and no outcome to
-                        # report, but a shot we cannot run still needs an
-                        # operator rather than being retried once a second.
+                        # The local override shot is this machine's own, chosen
+                        # here, and there is no runmanager row to hold it. Stop,
+                        # or retry a shot that cannot be read once a second.
                         self.set_status("Rejected local override shot\nRequests stopped")
-                    self.stop_requesting_shots(message.strip())
+                        self.stop_requesting_shots(message.strip())
                     time.sleep(1)
                     continue
 

@@ -74,10 +74,24 @@ the same filepath again later makes a new row with a new identifier.
 completed leaves the queue and is forwarded to lyse. Every other outcome —
 ``aborted``, ``failed`` or ``rejected`` — leaves the row exactly where it is,
 at the head of the queue, turns it red, and records the reason BLACS gave in
-its tooltip. The next request from BLACS is offered that same row, under the
-same identifier: retry is the default, and deleting the row is the only way to
-discard it. There is no Retry/Drop policy any more; the operator's choice is
-between asking for shots again and deleting the row.
+its tooltip. For ``aborted`` and ``failed`` the next request from BLACS is
+offered that same row, under the same identifier: retry is the default, and
+deleting the row is the only way to discard it. There is no Retry/Drop policy
+any more; the operator's choice is between asking for shots again and deleting
+the row.
+
+``rejected`` is the exception, and it is worth being clear about why. It means
+BLACS could not read the shot at all — a file that has gone, a connection table
+that does not match the apparatus. Nothing about the apparatus is wrong and
+nothing about it will change by asking again, so runmanager holds that row and
+stops offering it, and **BLACS does not stop**: it keeps requesting, receives
+nothing, and runs its local override shot until the row is deleted or a
+runmanager restart clears the state. Stopping BLACS for this would need
+somebody standing at the apparatus to start it again over a file only
+runmanager can put right, which a remote runmanager user cannot do. The one
+rejection that does stop BLACS is a local override shot it cannot read: that
+file was chosen at the apparatus, there is no queue row to hold it, and the
+alternative is retrying an unreadable file once a second.
 
 A shot that never got as far as BLACS is held the same way. With lazy compile,
 a queued shot is compiled when BLACS asks for it, and one that fails to compile

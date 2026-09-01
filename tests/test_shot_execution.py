@@ -537,36 +537,39 @@ class LocalErrorLatchTests(ShotLoopFixture, unittest.TestCase):
     shot, are driven through the loop itself.
     """
 
-    def test_a_shot_blacs_cannot_run_stops_requests_and_says_why(self):
+    def test_a_shot_blacs_cannot_read_is_reported_without_stopping(self):
+        # The shot is unusable, not the apparatus. Stopping here would need
+        # somebody standing at this machine to start it again over a file that
+        # is runmanager's to fix -- and a runmanager user watching from
+        # elsewhere could not. So the outcome goes back and requests stay on;
+        # runmanager holds that row and stops offering it, so the next exchange
+        # simply brings nothing.
         executor, runmanager = self.make_looping_executor(
             offer('shot-1', '/tmp/shot_a.h5')
         )
         executor._requesting_shots = True
         executor.process_request = lambda path: (
             None,
-            'Connection table of your file is not a subset\n',
+            'H5 file not accessible to Control PC\n',
         )
 
         self.run_loop(executor)
 
-        self.assertFalse(
-            executor.requesting_shots, 'requests stop until an operator says go'
+        self.assertTrue(
+            executor.requesting_shots,
+            'a shot runmanager cannot supply is not a reason to stop the apparatus',
         )
-        self.assertIn('Connection table', executor.local_error)
+        self.assertIsNone(executor.local_error, 'and nothing here needs attention')
         exchanges = runmanager.sent('queue_exchange')
         self.assertEqual(
             [request_shot for _, request_shot in exchanges],
-            [True, False],
-            'the exchange carrying a failure does not ask for another shot',
+            [True, True],
+            'so the next exchange asks for work as usual',
         )
         outcome = exchanges[1][0]
         self.assertEqual(outcome['shot_id'], 'shot-1')
         self.assertEqual(outcome['status'], 'rejected')
-        self.assertIn(
-            'Rejected',
-            executor.get_status(),
-            'delivering the outcome must not write over why requests stopped',
-        )
+        self.assertIn('H5 file not accessible', outcome['message'])
 
     def test_requesting_shots_again_clears_the_error_and_asks_for_work(self):
         executor, runmanager = self.make_looping_executor(

@@ -293,6 +293,11 @@ class IntegrationFixture(object):
         # shots reach it. 'completed' runs it through to the end; anything else
         # is a shot BLACS could not take up at all.
         self.outcomes = []
+        # Whether the operator presses Abort while the next shot is under way.
+        # Until this existed the only failure the harness could produce was a
+        # rejection -- a shot that never started -- so nothing here exercised
+        # the latch that a shot failing on the hardware sets.
+        self.abort_next_shot = False
         self.shots_run = []
         self.while_running = []
         self.passes_left = 0
@@ -368,6 +373,12 @@ class IntegrationFixture(object):
 
     def on_start_run(self):
         """Called while a shot is under way, before it finishes."""
+        if self.abort_next_shot:
+            self.abort_next_shot = False
+            # What the Abort button puts there. The loop reads it in the same
+            # turn as the shot finishing, and an abort takes precedence, so
+            # this is a shot stopped part-way rather than one that completed.
+            self.executor.notify_queue.put(['Shot Executor', 'abort'])
         self.while_running.append(
             {
                 'rows': self.runmanager.rows(),
@@ -399,7 +410,20 @@ class IntegrationFixture(object):
         shot never runs out.
         """
         self.passes_left = passes
-        shot_execution.time.sleep = lambda seconds: None
+        # A pass is counted by the exchange it makes, so a change that stops
+        # BLACS exchanging would leave the loop turning for ever -- and with
+        # sleep stubbed out, doing it at full speed. A test that hangs reports
+        # nothing; bound the turns as well, generously enough not to cut a real
+        # one short, and let the assertions say what went wrong.
+        turns = [0]
+        limit = 50 * max(1, passes)
+
+        def slept(seconds):
+            turns[0] += 1
+            if turns[0] > limit:
+                self.executor._manager_running = False
+
+        shot_execution.time.sleep = slept
         self.executor._manager_running = True
         ShotExecutor._manage(self.executor)
 
@@ -506,34 +530,32 @@ class LostReplyTests(IntegrationFixture, unittest.TestCase):
 
 
 class FailureLatchTests(IntegrationFixture, unittest.TestCase):
-    """A shot that did not run stays put, in red, and is retried by hand."""
+    """A shot the apparatus could not finish stops it, and is retried by hand."""
 
-    def test_a_failed_shot_stops_requests_stays_red_and_is_retried(self):
+    def test_an_aborted_shot_stops_requests_stays_red_and_is_retried(self):
         shot = self.make_shot_file('shot_a.h5')
         later = self.make_shot_file('shot_b.h5')
         self.runmanager.queue_manager.enqueue(
             [{'path': shot, 'compiled': True}, {'path': later, 'compiled': True}]
         )
         offered_id = self.runmanager.queue_manager.export_state()['items'][0]['shot_id']
-        self.outcomes = ['Connection table of your file is not a subset\n']
+        self.abort_next_shot = True
 
         self.executor.requesting_shots = True
         self.run_loop(passes=2)
 
         self.assertFalse(
             self.executor.requesting_shots,
-            'BLACS stops asking until an operator has seen why',
+            'the apparatus stopped mid-shot, so BLACS waits for an operator',
         )
-        self.assertIn('Connection table', self.executor.local_error)
+        self.assertIn('Aborted', self.executor.local_error)
         rows = self.runmanager.rows()
         self.assertEqual(
             [(row['path'], row['state']) for row in rows],
             [(shot, 'failed'), (later, '')],
             'the shot stays at the head of the queue, in red',
         )
-        self.assertIn(
-            'Connection table', rows[0]['tooltip'], 'with the reason BLACS gave'
-        )
+        self.assertIn('Aborted', rows[0]['tooltip'], 'with the reason BLACS gave')
         self.assertEqual(
             self.runmanager.analysis_submission.submitted,
             [],
@@ -554,7 +576,63 @@ class FailureLatchTests(IntegrationFixture, unittest.TestCase):
         )
         self.assertEqual(self.runmanager.rows(), [])
 
-    def test_runmanager_learns_the_outcome_but_is_asked_for_nothing_further(self):
+
+class RejectedShotTests(IntegrationFixture, unittest.TestCase):
+    """A shot BLACS cannot read is runmanager's to fix, and stops nothing.
+
+    A file that has gone, or a connection table that does not match. Nothing
+    about the apparatus is wrong, so BLACS keeps asking; runmanager holds that
+    row and stops offering it, which is what keeps the two from trading the
+    same refusal once a second. Stopping BLACS instead would mean somebody had
+    to stand at it and start it again over a file only runmanager can put right.
+    """
+
+    def test_blacs_reports_it_and_carries_on(self):
+        shot = self.make_shot_file('shot_a.h5')
+        later = self.make_shot_file('shot_b.h5')
+        self.runmanager.queue_manager.enqueue(
+            [{'path': shot, 'compiled': True}, {'path': later, 'compiled': True}]
+        )
+        self.outcomes = ['H5 file not accessible to Control PC\n']
+
+        self.executor.requesting_shots = True
+        self.run_loop(passes=3)
+
+        self.assertTrue(
+            self.executor.requesting_shots, 'the apparatus was never the problem'
+        )
+        self.assertIsNone(self.executor.local_error)
+        rows = self.runmanager.rows()
+        self.assertEqual(
+            [(row['path'], row['state']) for row in rows],
+            [(shot, 'rejected'), (later, '')],
+            'the row is held, and held apart from a shot that merely failed',
+        )
+        self.assertIn('H5 file not accessible', rows[0]['tooltip'])
+        self.assertEqual(
+            self.shots_run,
+            [shot],
+            'and it is not offered again, however many times BLACS asks',
+        )
+
+    def test_deleting_the_row_lets_the_queue_go_on(self):
+        shot = self.make_shot_file('shot_a.h5')
+        later = self.make_shot_file('shot_b.h5')
+        self.runmanager.queue_manager.enqueue(
+            [{'path': shot, 'compiled': True}, {'path': later, 'compiled': True}]
+        )
+        self.outcomes = ['H5 file not accessible to Control PC\n']
+        self.executor.requesting_shots = True
+        self.run_loop(passes=2)
+
+        rejected = self.runmanager.rows()[0]
+        self.runmanager.queue_manager.delete_rows([rejected['shot_id']])
+        self.run_loop(passes=2)
+
+        self.assertEqual(self.shots_run, [shot, later])
+        self.assertEqual(self.runmanager.rows(), [])
+
+    def test_runmanager_says_what_blacs_reported(self):
         shot = self.make_shot_file('shot_a.h5')
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
         self.outcomes = ['Not a valid run file\n']
@@ -562,13 +640,9 @@ class FailureLatchTests(IntegrationFixture, unittest.TestCase):
         self.executor.requesting_shots = True
         self.run_loop(passes=2)
 
-        # The exchange that carried the failure did not ask for another shot,
-        # so the red row is still waiting to be retried rather than having been
-        # handed straight back out.
-        self.assertEqual(self.runmanager.rows()[0]['state'], 'failed')
+        self.assertEqual(self.runmanager.rows()[0]['state'], 'rejected')
         self.assertTrue(
-            self.runmanager.output_box.said('rejected', 'Not a valid run file'),
-            'and runmanager says what BLACS reported',
+            self.runmanager.output_box.said('rejected', 'Not a valid run file')
         )
 
 
@@ -673,7 +747,7 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
     def test_the_status_pull_carries_the_reason_blacs_stopped(self):
         shot = self.make_shot_file('shot_a.h5')
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
-        self.outcomes = ['Connection table of your file is not a subset\n']
+        self.abort_next_shot = True
 
         self.executor.requesting_shots = True
         self.run_loop(passes=2)
@@ -681,8 +755,8 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
         answer = self.monitor.poll()
         text, tooltip = blacs_activity_display(answer)
         self.assertIn('stopped', text)
-        self.assertIn('Connection table', text)
-        self.assertIn('Connection table', tooltip)
+        self.assertIn('Aborted', text)
+        self.assertIn('Aborted', tooltip)
         self.assertEqual(
             blacs_link_display(answer)[0],
             'online',
