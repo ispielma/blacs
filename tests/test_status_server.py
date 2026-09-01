@@ -86,15 +86,9 @@ class StatusServerTests(unittest.TestCase):
             response, Exception, 'the server answers rather than dying'
         )
 
-    def test_the_server_offers_nothing_that_changes_blacs(self):
-        # Monitoring only: what stopped requests at this apparatus, the gate
-        # on hardware execution and Abort are the operator's, and no remote
-        # runmanager may reach any of them. The handler dispatches whatever
-        # handle_ method it finds, so what is offered is this list.
-        self.assertEqual(
-            [name for name in dir(ExperimentServer) if name.startswith('handle_')],
-            ['handle_get_status'],
-        )
+    # That the server offers nothing which changes BLACS is the boundary rule
+    # rather than a fact about this server, so it is enforced in
+    # test_architecture.py alongside the other half of it.
 
 
 if __name__ == '__main__':

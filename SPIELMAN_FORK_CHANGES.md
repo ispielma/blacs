@@ -1,7 +1,8 @@
 # Spielman Fork Merge Notes for `blacs`
 
 This file is for agents merging new upstream `master` changes into the
-revised `RunmanagerQueueSimple` BLACS code.
+revised BLACS code on the `RunmanagerControl` branch (previously
+`RunmanagerQueueSimple`).
 
 It is not a changelog. It is a map of the local structural changes that make
 simple grep-based merging unreliable.
@@ -9,7 +10,7 @@ simple grep-based merging unreliable.
 ## Scope
 
 This note describes the revised BLACS execution path in the current local
-working tree of `RunmanagerQueueSimple`.
+working tree of `RunmanagerControl`.
 
 The main architectural change is:
 
@@ -48,17 +49,25 @@ Legacy read compatibility is still required:
 
 - `queue_controls_frame` -> `shot_controls_frame`
 - `queue_control_buttons_horizontalLayout` -> `shot_control_buttons_horizontalLayout`
-- `queue_pause_button` -> `shot_pause_button`
+- `queue_pause_button` -> `shot_request_button`
 - `queue_abort_button` -> `shot_abort_button`
 - `queue_status_verticalLayout` -> `shot_status_verticalLayout`
 - `queue_status` -> `shot_status`
 
+`shot_request_button` is not a rename of the pause button, it replaces it and
+is its inverse: it is labelled `Request shots`, is checked to let BLACS run
+anything, and always starts unchecked. Do not port upstream pause semantics
+onto it. Queue pause now lives in runmanager, where it withholds shots without
+stopping this apparatus.
+
 ### Status / log wording renames
 
-- `Queue paused` -> `Execution paused`
-- `Pause the queue` -> `Pause shot execution`
 - `starting queue manager` -> `starting shot execution`
 - `queue manager` -> `shot execution` or `shot executor`, depending on context
+
+Upstream's `Queue paused` / `Pause the queue` wording has no equivalent here.
+BLACS's own reason for not running is `Requests stopped`, with the specific
+cause recorded in `ShotExecutor.local_error`.
 
 ## Functions And Behaviors That Changed
 
@@ -110,6 +119,19 @@ Current return is:
 If upstream changes the old submission handler, do not blindly merge that old
 push-based behavior back in.
 
+#### `ExperimentServer.handler(self, request_data)`
+
+`ExperimentServer` also answers a `[command, args, kwargs]` request now, the
+same shape runmanager's own server uses, dispatching to `handle_<cmd>`. A bare
+filepath still takes the `process()` rejection path above.
+
+`handle_get_status` is the only command, and must stay the only one: it returns
+`ShotExecutor.get_status_snapshot()` so a runmanager user can see what this
+apparatus is doing. Enabling requests, clearing the error that stopped them,
+restarting a device and aborting a shot stay with the operator here. Because
+the handler dispatches whatever `handle_` method it finds, adding one puts that
+command on the wire; `tests/test_architecture.py` fails if that happens.
+
 ### `blacs/shot_execution.py`
 
 This file is the old `experiment_queue.py`, but it is no longer a queue
@@ -128,13 +150,28 @@ Upstream queue-era assumptions that are no longer true:
 
 Current flow is:
 
-1. if paused, wait
-2. request one agnostic shot path from `runmanager.remote.Client.queue_request_next()`
-3. if runmanager gives nothing or is unavailable, use `local_override_lineEdit` if set
+1. if `Request shots` is unchecked and no outcome is still waiting to be
+   reported, wait
+2. exchange with runmanager through
+   `runmanager.remote.Client.queue_exchange(outcome, request_shot)`: report how
+   the last shot turned out and ask for the next one in one message. The reply
+   carries a provider `state` (`shot`, `paused` or `none`), a stable `shot_id`
+   and an agnostic path
+3. if runmanager offers nothing — paused, empty, unreachable, or a reply we
+   could not read — use `local_override_lineEdit` if set
 4. convert the chosen agnostic path to local form
 5. validate/prepare it with `process_request()`
 6. execute it immediately
-7. on completion, go back to step 1
+7. hold the outcome in `_pending_outcome` and go back to step 1, where the next
+   exchange delivers it
+
+There is no acknowledgement step and no background outcome-notifier thread.
+Both were removed with the old request/accept/report sequence: runmanager keeps
+the offered row in its queue, so nothing has to be acknowledged, and an outcome
+rides on the next exchange rather than travelling on a channel of its own. Do
+not merge either back in — the ordering rule in
+`docs/source/shot-management.rst` depends on the exchange being the only place
+a shot is asked for.
 
 If upstream modifies queue-pop / queue-model / queue-tree logic inside
 `experiment_queue.py`, that code probably does not belong in this fork.
@@ -165,7 +202,6 @@ being redesigned.
 
 Current saved state is only:
 
-- `manager_paused`
 - `last_opened_shots_folder`
 - `local_override_path`
 
@@ -174,6 +210,10 @@ Do not reintroduce:
 - `files_queued`
 - queue tree/model state
 - legacy queue UI restoration
+- `manager_paused`, or any saved form of `Request shots`. Whether BLACS runs
+  shots is deliberately runtime-only, so that enabling hardware execution is
+  always a deliberate act at this apparatus rather than something a restart
+  resumes.
 
 #### Local override behavior
 
@@ -269,7 +309,7 @@ In this fork, those edits likely belong in:
 Search for both old and new names:
 
 - `queue_controls_frame` / `shot_controls_frame`
-- `queue_pause_button` / `shot_pause_button`
+- `queue_pause_button` / `shot_request_button` (a replacement, not a rename)
 - `queue_abort_button` / `shot_abort_button`
 - `queue_status` / `shot_status`
 - `experiment_queue` / `shot_execution`
@@ -312,4 +352,10 @@ These were intentionally removed from BLACS in this fork:
 - direct pushed-shot submission into BLACS
 - queue-oriented plugin/UI naming
 - processing the local override when restoring or editing its path
+- a BLACS-side pause control, or any saved `Request shots` state
+- the superseded `queue_request_next` / `shot_accepted` / `shot_rejected` /
+  `notify_shot_complete` shot-handoff calls, in either direction
+- a background thread that delivers or retries shot outcomes
+- any command on `ExperimentServer` that changes BLACS rather than reporting on
+  it
 
