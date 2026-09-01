@@ -545,6 +545,17 @@ class ShotExecutor(object):
                     # asks for the next one. There is nothing to acknowledge:
                     # the row stays in runmanager's queue while we run it, so a
                     # reply that never arrives costs a poll rather than a shot.
+                    #
+                    # This is the only place a shot is ever asked for, and it
+                    # is reached only between shots, with the outcome of the
+                    # last one in hand. Runmanager's reclaim rests on that: a
+                    # request that carries no outcome retiring a row it still
+                    # has marked running proves this BLACS is not running it,
+                    # so it hands the row out again rather than leaving the
+                    # queue stopped behind a reply that went missing. Asking
+                    # for work from anywhere else, or while a shot is under
+                    # way, breaks that inference and would have one shot handed
+                    # out twice.
                     response, reached = self.exchange_with_runmanager(request_shot)
                     shot_id = response['shot_id']
                     agnostic_path = response['path']
@@ -1042,10 +1053,13 @@ class ShotExecutor(object):
             self.set_status("Idle")
         if self._pending_outcome is not None:
             # BLACS is closing with an outcome it never got to report. The row
-            # is still in runmanager's queue, but it is stuck there: runmanager
-            # marked it running when it offered it, and only an outcome or a
-            # deletion clears that, so the queue behind it will not move until
-            # an operator deletes the row. Say which shot, and how it went.
+            # is still in runmanager's queue, marked running, but it is no
+            # longer stranded there: the next BLACS to ask that runmanager for
+            # work is offered the same row again, under the same id, because a
+            # request carrying no outcome for it proves nobody is running it.
+            # So the shot itself is not lost -- what is lost is this run of it,
+            # which reaches neither runmanager nor lyse and will be run again.
+            # Say which shot, and how it went.
             logger.warning(
                 'Runmanager was never told that shot %s %s%s.',
                 self._pending_outcome['shot_id'],

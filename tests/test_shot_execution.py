@@ -308,10 +308,12 @@ class ShotLoopTests(ShotLoopFixture, unittest.TestCase):
 NOTHING_OFFERED = (
     # A runmanager whose queue its own user has paused, one with nothing
     # queued -- or whose next shot is still compiling, which looks the same
-    # from here -- and one we cannot reach at all:
+    # from here -- one we cannot reach at all, and one whose reply we could not
+    # make sense of:
     ('a paused queue', {'state': 'paused', 'shot_id': None, 'path': None}, True),
     ('nothing to offer', {'state': 'none', 'shot_id': None, 'path': None}, True),
     ('an unreachable runmanager', None, False),
+    ('a reply we cannot read', 'not a response at all', True),
 )
 
 
@@ -368,6 +370,7 @@ class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
             NOTHING_OFFERED[0] + ('Runmanager queue paused',),
             NOTHING_OFFERED[1] + ('Idle',),
             NOTHING_OFFERED[2] + ('Runmanager unavailable',),
+            NOTHING_OFFERED[3] + ('Idle',),
         ):
             with self.subTest(runmanager=description):
                 executor, _ = self.make_looping_executor(response, reached=reached)
