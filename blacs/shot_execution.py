@@ -304,6 +304,20 @@ class ShotExecutor(object):
         """Stop shot execution. Called from the GUI thread as BLACS closes."""
         self.manager_running = False
 
+    def final_report_pending(self):
+        """Whether the loop still owes runmanager a word about a shot.
+
+        Read from the GUI thread as BLACS quits, because the report is made on
+        the way out of the loop's own thread and that thread is a daemon: what
+        this answers is whether ending the process now would take the report
+        with it. False once the outcome has been taken -- and false once the
+        loop has ended, which is after it has named a run it could not deliver.
+
+        True is not a reason to wait indefinitely: the loop can be a whole
+        communication timeout from noticing it was stopped, so whoever asks
+        bounds the wait."""
+        return self._pending_outcome is not None and self.manager.is_alive()
+
     def exchange_with_runmanager(self, request_shot, timeout=None):
         """Report the finished shot's outcome, and ask for the next shot.
 

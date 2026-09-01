@@ -16,6 +16,7 @@ The two callers do not need the same executor, so this builds the plain one and
 returns it for the caller to add to. What it must not do is leave a field out.
 """
 import logging
+import threading
 import types
 import warnings
 
@@ -120,6 +121,9 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     executor.status_shot_id = None
     executor.last_opened_shots_folder = ''
     executor.master_pseudoclock = None
+    # The shot loop's thread. __init__ starts it; an executor built here has no
+    # loop running, and a test that wants one puts a started thread here.
+    executor.manager = threading.Thread(target=lambda: None)
     return executor
 
 

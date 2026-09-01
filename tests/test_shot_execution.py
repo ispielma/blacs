@@ -8,6 +8,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 import types
 import unittest
 
@@ -15,6 +16,9 @@ import zprocess
 
 from fixtures import FakeBLACS, FakeUi, make_executor
 
+# fixtures does the guarded import of BLACS; by the time this runs the module
+# is in sys.modules, so importing it again here costs nothing and warns nothing.
+import blacs.__main__
 from blacs import shot_execution
 from blacs.shot_execution import ShotExecutor
 
@@ -254,6 +258,189 @@ class HeldOutcomeWhenTheLoopEndsTests(unittest.TestCase):
         self.assertTrue(
             any('shot-1' in line for line in captured.output),
             'whoever reads the log has to be able to tell which run was lost',
+        )
+
+
+class RecordingTimer(object):
+    """Stands in for QTimer so the quit poll can be driven by hand.
+
+    finalise_quit reschedules itself on a real timer, which needs an event loop
+    these tests do not run. Holding the callback instead runs the real poll --
+    deadline and all -- one pass at a time.
+    """
+
+    def __init__(self):
+        self.scheduled = []
+
+    def singleShot(self, msec, callback):
+        self.scheduled.append(callback)
+
+
+class QuittingBLACS(object):
+    """BLACS's own quit poll, with no tabs and no window.
+
+    finalise_quit is borrowed rather than described, for the reason
+    LoopbackExperimentServer borrows the request handler: what has to be
+    exercised is BLACS's own decision that it has finished quitting.
+    """
+
+    finalise_quit = blacs.__main__.BLACS.finalise_quit
+
+    def __init__(self, shot_executor):
+        self.shot_executor = shot_executor
+        self.tablist = {}
+        self.exit_complete = False
+
+
+class QuitWaitsForTheFinalReportTests(unittest.TestCase):
+    """Quitting BLACS while the shot loop still has an outcome in hand.
+
+    That final report happens in the shot loop's thread, on the way out, and
+    that thread is a daemon: nothing stops the process ending first and taking
+    the report with it. The loop is a sleep, or a whole communication timeout,
+    away from even noticing it was stopped. Calling manage() by hand cannot see
+    any of this -- it returns only once the report has been made, which is
+    exactly what hid it -- so these drive BLACS's own finalise_quit poll
+    against a loop running in a thread of its own.
+    """
+
+    def setUp(self):
+        self.timer = RecordingTimer()
+        real_timer = blacs.__main__.QTimer
+        blacs.__main__.QTimer = self.timer
+        self.addCleanup(setattr, blacs.__main__, 'QTimer', real_timer)
+
+    def executor_holding_an_outcome(self):
+        executor = make_executor()
+        executor._manager_running = True
+        executor._pending_outcome = {
+            'shot_id': 'shot-1',
+            'status': 'completed',
+            'message': '',
+        }
+        return executor
+
+    def start_shot_loop(self, executor):
+        """Run the real manage(), and so its real final report, in a thread."""
+
+        def loop():
+            # _manager_running rather than the property, which runs on the GUI
+            # thread: there is no event loop here to run it on.
+            while executor._manager_running:
+                time.sleep(0.01)
+            # However it was stopped, the loop takes a moment to get out:
+            time.sleep(0.2)
+
+        executor._manage = loop
+        executor.manager = threading.Thread(target=executor.manage)
+        executor.manager.daemon = True
+        self.addCleanup(self.stop_shot_loop, executor)
+        executor.manager.start()
+
+    def stop_shot_loop(self, executor):
+        executor._manager_running = False
+        executor.manager.join(timeout=5)
+
+    def quit(self, blacs_app, deadline_in=2.0):
+        """Drive finalise_quit the way its timer would, until BLACS is done."""
+        blacs_app.shot_executor.stop()  # what closeEvent does
+        gave_up_at = time.time() + deadline_in + 2
+        blacs_app.finalise_quit(time.time() + deadline_in, {})
+        while not blacs_app.exit_complete:
+            self.assertTrue(self.timer.scheduled, 'the quit poll stopped polling')
+            self.assertLess(time.time(), gave_up_at, 'BLACS never finished quitting')
+            poll = self.timer.scheduled.pop()
+            time.sleep(0.02)
+            poll()
+
+    def test_a_quit_while_an_outcome_is_held_waits_for_it_to_be_delivered(self):
+        executor = self.executor_holding_an_outcome()
+        delivered = threading.Event()
+
+        def exchange(request_shot, timeout=None):
+            executor._pending_outcome = None
+            delivered.set()
+            return {'state': 'none', 'shot_id': None, 'path': None}, True
+
+        executor.exchange_with_runmanager = exchange
+        self.start_shot_loop(executor)
+
+        self.quit(QuittingBLACS(executor))
+
+        self.assertTrue(
+            delivered.is_set(),
+            'BLACS declared itself finished before the outcome it was holding '
+            'reached runmanager, and the process would have ended with it',
+        )
+
+    def test_quitting_is_not_delayed_when_there_is_nothing_to_deliver(self):
+        executor = self.executor_holding_an_outcome()
+        executor._pending_outcome = None
+        exchanges = []
+
+        def exchange(request_shot, timeout=None):
+            exchanges.append(timeout)
+            return {'state': 'none', 'shot_id': None, 'path': None}, True
+
+        executor.exchange_with_runmanager = exchange
+        # Left running, and never stopped: a loop with nothing in hand is
+        # nothing to wait for, whatever it is in the middle of.
+        self.start_shot_loop(executor)
+        blacs_app = QuittingBLACS(executor)
+
+        blacs_app.finalise_quit(time.time() + 2, {})
+
+        self.assertTrue(blacs_app.exit_complete, 'there was nothing to wait for')
+        self.assertEqual(self.timer.scheduled, [], 'so nothing was rescheduled')
+        self.assertEqual(exchanges, [], 'and nothing was reported')
+
+    def test_a_runmanager_that_never_answers_cannot_hold_the_quit_open(self):
+        executor = self.executor_holding_an_outcome()
+        answering = threading.Event()
+
+        def exchange(request_shot, timeout=None):
+            # A runmanager that is not answering. The real exchange is bounded
+            # by its own timeout; the quit must not have to rely on that.
+            answering.wait()
+            return {'state': 'none', 'shot_id': None, 'path': None}, False
+
+        executor.exchange_with_runmanager = exchange
+        self.start_shot_loop(executor)
+        # Registered after the loop so it is released before it is joined:
+        self.addCleanup(answering.set)
+        blacs_app = QuittingBLACS(executor)
+
+        started = time.time()
+        self.quit(blacs_app, deadline_in=0.3)
+
+        self.assertLess(
+            time.time() - started,
+            1.5,
+            'the deadline was 0.3s, and an apparatus with a runmanager that '
+            'is not answering still has to be able to close BLACS',
+        )
+        self.assertFalse(answering.is_set(), 'it was still stuck when we quit')
+
+    def test_an_outcome_that_could_not_be_delivered_is_named_before_the_exit(self):
+        executor = self.executor_holding_an_outcome()
+
+        def exchange(request_shot, timeout=None):
+            # Runmanager did not take it, so it is still held:
+            return {'state': 'none', 'shot_id': None, 'path': None}, False
+
+        executor.exchange_with_runmanager = exchange
+        self.start_shot_loop(executor)
+        blacs_app = QuittingBLACS(executor)
+
+        with self.assertLogs('test.shot_executor', level='WARNING') as captured:
+            self.quit(blacs_app)
+            # Read inside the block, because when the line was written is the
+            # whole point: quit() returns the moment BLACS declares itself
+            # finished, and the process ends there.
+            named = [line for line in captured.output if 'shot-1' in line]
+
+        self.assertTrue(
+            named, 'the run that was lost has to be named before BLACS goes'
         )
 
 

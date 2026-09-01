@@ -579,10 +579,17 @@ class BLACS(LabscriptApplication):
                     pending_threads[name].join()
                     del pending_threads[name]
                     del self.tablist[name]
-        if not self.tablist:
-            # All tabs are closed. Nothing is waiting on the shot executor:
-            # outcomes travel on the next exchange, and the shot runmanager
-            # offered keeps its place in its queue until one arrives.
+        if not self.tablist and (
+            overdue or not self.shot_executor.final_report_pending()
+        ):
+            # All tabs are closed, and the shot executor has told runmanager
+            # how the shot it was holding turned out -- or named the run it
+            # could not deliver, or run out of time to. It makes that report on
+            # its way out of a daemon thread, so quitting has to wait for it;
+            # only for as long as the deadline, because a runmanager that is
+            # not answering must not be able to hold the quit open. Nothing to
+            # report is nothing to wait for, and the shot itself is not lost
+            # either way: it keeps its place in runmanager's queue.
             self.exit_complete = True
             logger.info('quitting')
             return
