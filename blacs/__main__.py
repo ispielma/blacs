@@ -209,10 +209,6 @@ class BLACS(LabscriptApplication):
         self.connection_table_h5file = self.exp_config.get('paths','connection_table_h5')
         self.connection_table_labscript = self.exp_config.get('paths','connection_table_py')
 
-        # Setup the UI
-        self.ui.main_splitter.setStretchFactor(0,0)
-        self.ui.main_splitter.setStretchFactor(1,1)
-
         self.tablist = {}
         self.panes = {}
         self.settings_dict = {}
@@ -222,11 +218,13 @@ class BLACS(LabscriptApplication):
         logger.info('finding connected devices in connection table')
         self.attached_devices = self.connection_table.get_attached_devices()
 
-        # Store the panes in a dictionary for easy access
+        # Store the panes in a dictionary for easy access. The shot controls
+        # are not among them: they sit above the tab splitters rather than in
+        # one, so they take the height they need and the device tabs get the
+        # rest. There is nothing to drag and nothing to remember.
         self.panes['tab_top_vertical_splitter'] = self.ui.tab_top_vertical_splitter
         self.panes['tab_bottom_vertical_splitter'] = self.ui.tab_bottom_vertical_splitter
         self.panes['tab_horizontal_splitter'] = self.ui.tab_horizontal_splitter
-        self.panes['main_splitter'] = self.ui.main_splitter
 
         # Get settings to restore
         logger.info('Loading front panel settings')
