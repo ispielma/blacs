@@ -93,3 +93,31 @@ class StatusServerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CloseBeforeTheServerExistsTests(unittest.TestCase):
+    """Closing BLACS while it is still starting.
+
+    The experiment server is started after BLACS itself, deliberately: one
+    started earlier would spend the connection table load telling a runmanager
+    that this BLACS had failed rather than that it was still starting. But the
+    main window is shown partway through that startup, and it goes on for a
+    while afterwards building device tabs and restoring tab positions.
+
+    The close handler shuts the server down unconditionally, so a close
+    arriving in that window raised NameError inside a Qt event handler -- after
+    the handler had already set the exiting flag, which is what stops it running
+    again. The result was a window that could not be closed at all.
+    """
+
+    def test_the_server_name_exists_before_the_server_does(self):
+        self.assertIn(
+            'experiment_server',
+            vars(blacs.__main__),
+            'the close handler reads this as a module global, so it has to '
+            'resolve from the moment a window exists to be closed',
+        )
+        self.assertIsNone(
+            blacs.__main__.experiment_server,
+            'and it says there is no server yet rather than being absent',
+        )

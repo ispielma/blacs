@@ -135,7 +135,11 @@ class BLACSWindow(QMainWindow):
                 self.blacs.exiting = True
                 self.blacs.shot_executor.stop()
                 self.blacs.settings.close()
-                experiment_server.shutdown()
+                if experiment_server is not None:
+                    # None while BLACS is still starting. Raising here left
+                    # exiting set with nothing able to clear it, so the window
+                    # could never be closed afterwards.
+                    experiment_server.shutdown()
                 plugins.manager.close_plugins()
 
                 inmain_later(self.blacs.on_save_exit)
@@ -607,6 +611,12 @@ class BLACS(LabscriptApplication):
 
     def on_open_preferences(self,*args,**kwargs):
         self.settings.create_dialog()
+
+# Bound in the startup below, after BLACS itself. Declared here because the
+# close handler reads it as a global and can run before that: the main window
+# is shown partway through startup, which then goes on building device tabs.
+experiment_server = None
+
 
 class ExperimentServer(ZMQServer):
     def handler(self, request_data):
