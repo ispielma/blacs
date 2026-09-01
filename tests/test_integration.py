@@ -31,7 +31,11 @@ from qtutils.qt.QtWidgets import QApplication
 
 import runmanager.__main__
 from runmanager.__main__ import RemoteServer, RunManager
-from runmanager.blacs_status import BlacsStatusMonitor, blacs_status_display
+from runmanager.blacs_status import (
+    BlacsStatusMonitor,
+    blacs_activity_display,
+    blacs_link_display,
+)
 from runmanager.queueing import EMPTY_QUEUE_DEFAULT_LABSCRIPT, QueueManager
 import runmanager.blacs_status
 import runmanager.remote
@@ -632,22 +636,39 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
 
         self.assertEqual(
-            blacs_status_display(self.monitor.poll())[0],
-            'disabled',
+            blacs_activity_display(self.monitor.poll())[0],
+            'BLACS: not requesting shots',
             'BLACS starts up not requesting shots',
         )
 
         self.executor.requesting_shots = True
         self.run_loop(passes=2)
 
-        state, tooltip = blacs_status_display(self.while_running[0]['status'])
-        self.assertEqual(state, 'running')
+        text, tooltip = blacs_activity_display(self.while_running[0]['status'])
+        self.assertEqual(text, 'BLACS: running shot_a.h5')
         self.assertIn('shot_a.h5', tooltip)
         self.assertEqual(
-            blacs_status_display(self.monitor.poll())[0],
-            'requesting',
+            blacs_activity_display(self.monitor.poll())[0],
+            'BLACS: requesting shots',
             'and once the shot is over it is asking for another',
         )
+
+    def test_a_blacs_that_answers_is_online_whatever_it_is_doing(self):
+        # The light beside the destination checkbox is the link, not the
+        # queue: BLACS is online through all of this, including while it is
+        # sitting there deliberately not asking for work.
+        shot = self.make_shot_file('shot_a.h5')
+        self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
+
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
+
+        self.executor.requesting_shots = True
+        self.run_loop(passes=2)
+
+        self.assertEqual(
+            blacs_link_display(self.while_running[0]['status'])[0], 'online'
+        )
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
 
     def test_the_status_pull_carries_the_reason_blacs_stopped(self):
         shot = self.make_shot_file('shot_a.h5')
@@ -657,9 +678,16 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
         self.executor.requesting_shots = True
         self.run_loop(passes=2)
 
-        state, tooltip = blacs_status_display(self.monitor.poll())
-        self.assertEqual(state, 'error')
+        answer = self.monitor.poll()
+        text, tooltip = blacs_activity_display(answer)
+        self.assertIn('stopped', text)
+        self.assertIn('Connection table', text)
         self.assertIn('Connection table', tooltip)
+        self.assertEqual(
+            blacs_link_display(answer)[0],
+            'online',
+            'an apparatus that stopped is still answering',
+        )
         self.assertEqual(
             self.statuses[-1], self.monitor.poll(), 'every answer is reported'
         )

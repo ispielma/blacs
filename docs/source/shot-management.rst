@@ -199,15 +199,24 @@ has. A path with no identifier is BLACS running its own local override shot,
 and runmanager says so. The snapshot is answered without the GUI thread, so a
 BLACS busy with a shot still answers.
 
-The snapshot is shown as an indicator beside the **BLACS** checkbox, and it is
-informational only. Apart from answering a ``hello`` ping, and refusing the
-direct shot submissions BLACS no longer accepts, ``get_status`` is the only
-command BLACS's server serves, and that is deliberate: enabling requests,
-clearing what stopped them,
-restarting a device and aborting a shot all stay with the operator standing at
-the apparatus. There is an architecture guard in each repository's test suite
-that fails if that changes, or if the superseded request/accept/reject/report
-calls come back.
+One snapshot is shown in two places, because it answers two different
+questions. Beside the **BLACS** checkbox is a light saying whether BLACS
+answered at all: checking, then responding or not responding. It means exactly
+what the lyse light on the row below it means and no more — a BLACS sitting
+there with **Request shots** unticked, or stopped by a device error, is a
+healthy link and shows as responding. Beside **Pause queue** is a line of text
+saying what BLACS is doing with the queue: requesting shots, running a named
+shot, not requesting shots, or stopped with the reason. That is queue
+behaviour rather than link health, it belongs next to the control it is about,
+and none of it is a yes or a no that a glyph could carry.
+
+Both are informational only. Apart from answering a ``hello`` ping, and
+refusing the direct shot submissions BLACS no longer accepts, ``get_status``
+is the only command BLACS's server serves, and that is deliberate: enabling
+requests, clearing what stopped them, restarting a device and aborting a shot
+all stay with the operator standing at the apparatus. There is an architecture
+guard in each repository's test suite that fails if that changes, or if the
+superseded request/accept/reject/report calls come back.
 
 Default shots and the local override shot
 -----------------------------------------
@@ -233,10 +242,10 @@ queue is paused, empty, or still compiling, or runmanager could not be reached
 or its reply could not be read. It belongs to no runmanager queue, so its
 completions are reported to nobody: they reach neither runmanager nor lyse,
 which is what keeps repetitions of a shot nobody submitted out of the analysis.
-No queue row is created, changed or retired by one — though a runmanager
-watching the status indicator can see that BLACS is running one, because a shot
-with no identifier is named there as a BLACS local override rather than as
-queued work. Each repetition after the first is written to its own numbered
+No queue row is created, changed or retired by one — though a runmanager can
+still see that BLACS is running one: the activity line beside **Pause queue**
+names the shot, and its tooltip says the shot has no identifier and so is a
+BLACS local override rather than queued work. Each repetition after the first is written to its own numbered
 ``_repXXXXX.h5`` file, so no data is overwritten. A
 local override shot BLACS cannot run still stops requests and records the
 reason, because retrying an unrunnable shot once a second is no answer either —
