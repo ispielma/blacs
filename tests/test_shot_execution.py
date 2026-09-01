@@ -463,16 +463,42 @@ class ShotLoopFixture(object):
 
     def setUp(self):
         self.real_process_tree = shot_execution.process_tree
-        self.real_sleep = shot_execution.time.sleep
+        self.real_time = shot_execution.time
         shot_execution.process_tree = types.SimpleNamespace(
             zlock_client=types.SimpleNamespace(set_thread_name=lambda name: None)
         )
 
     def tearDown(self):
         shot_execution.process_tree = self.real_process_tree
-        shot_execution.time.sleep = self.real_sleep
+        shot_execution.time = self.real_time
+
+    def count_passes_by_sleeping(self, on_sleep):
+        """Stand in for the module's ``time``, counting the loop's sleeps.
+
+        The module does ``import time``, so ``shot_execution.time`` is the
+        standard library module itself: assigning to its ``sleep`` replaced it
+        for every thread in the interpreter, and any incidental sleep reached
+        during a pass -- inside zlock, inside h5py, inside anything added later
+        -- was counted as one. Rebinding the name in the module under test
+        leaves the real module alone."""
+        shot_execution.time = types.SimpleNamespace(
+            sleep=on_sleep,
+            time=self.real_time.time,
+            monotonic=self.real_time.monotonic,
+        )
 
     def run_loop(self, executor, passes=2):
+        """Run the real loop for a number of passes, counted by its sleeps.
+
+        No turn bound, unlike the integration fixture's loop. There a pass is
+        counted by the exchange it makes, so sleeps still happen and counting
+        them bounds the turns. Here the sleep *is* the counter, so a loop that
+        stopped sleeping altogether would not be caught by counting sleeps, and
+        the obvious alternative -- running _manage on a worker thread and
+        joining with a timeout -- does not work: set_status is
+        @inmain_decorator, so off the main thread with no event loop running it
+        would block for ever. Left as it is deliberately rather than guarded by
+        something that cannot fire."""
         remaining = [passes]
 
         def stop_after_a_couple_of_passes(seconds):
@@ -480,7 +506,7 @@ class ShotLoopFixture(object):
             if remaining[0] <= 0:
                 executor._manager_running = False
 
-        shot_execution.time.sleep = stop_after_a_couple_of_passes
+        self.count_passes_by_sleeping(stop_after_a_couple_of_passes)
         ShotExecutor._manage(executor)
 
     def make_looping_executor(self, response, reached=True):
@@ -811,7 +837,7 @@ class StatusWhenRequestsStopTests(ShotLoopFixture, unittest.TestCase):
             else:
                 executor._manager_running = False
 
-        shot_execution.time.sleep = at_the_end_of_a_pass
+        self.count_passes_by_sleeping(at_the_end_of_a_pass)
         ShotExecutor._manage(executor)
 
     def test_whatever_was_on_screen_gives_way_to_not_requesting_shots(self):

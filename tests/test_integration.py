@@ -424,7 +424,14 @@ class IntegrationFixture(object):
             if turns[0] > limit:
                 self.executor._manager_running = False
 
-        shot_execution.time.sleep = slept
+        # Rebind the name in the module under test rather than assigning to
+        # the real time module's sleep: shot_execution does `import time`, so
+        # that assignment replaced sleep for every thread in the interpreter.
+        self.real_time = shot_execution.time
+        self.addCleanup(setattr, shot_execution, 'time', self.real_time)
+        shot_execution.time = types.SimpleNamespace(
+            sleep=slept, time=self.real_time.time, monotonic=self.real_time.monotonic
+        )
         self.executor._manager_running = True
         ShotExecutor._manage(self.executor)
 
