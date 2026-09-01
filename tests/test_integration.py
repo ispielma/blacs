@@ -23,12 +23,12 @@ import tempfile
 import threading
 import types
 import unittest
-import warnings
 
 import labscript_utils.h5_lock  # must precede h5py, as it does in BLACS itself
 import h5py
 from qtutils.qt.QtWidgets import QApplication
 
+import fixtures
 import runmanager.__main__
 from runmanager.__main__ import RemoteServer, RunManager
 from runmanager.blacs_status import (
@@ -40,13 +40,10 @@ from runmanager.queueing import EMPTY_QUEUE_DEFAULT_LABSCRIPT, QueueManager
 import runmanager.blacs_status
 import runmanager.remote
 
-with warnings.catch_warnings():
-    # See test_status_server: importing BLACS proper installs a warning logger
-    # that warns as it logs, so any warning raised while it is installed
-    # recurses until the stack runs out.
-    warnings.simplefilter('ignore')
-    import blacs.__main__
-    from blacs.__main__ import ExperimentServer
+# fixtures does the guarded import of BLACS; by the time this runs the module
+# is in sys.modules, so importing it again here costs nothing and warns nothing.
+from fixtures import FakeUi, LoopbackExperimentServer, make_executor
+import blacs.__main__
 
 from blacs import shot_execution
 from blacs.shot_execution import ShotExecutor
@@ -174,58 +171,6 @@ class LoopbackRunmanagerClient(runmanager.remote.Client):
 # --------------------------------------------------------------------- BLACS
 
 
-class FakeTextWidget(object):
-    def __init__(self):
-        self._text = ''
-
-    def text(self):
-        return self._text
-
-    def setText(self, value):
-        self._text = str(value)
-
-
-class FakeButton(object):
-    def __init__(self):
-        self._checked = False
-        self.clicked = types.SimpleNamespace(
-            connect=lambda callback: None, disconnect=lambda callback: None
-        )
-
-    def isChecked(self):
-        return self._checked
-
-    def setChecked(self, value):
-        self._checked = bool(value)
-
-    def setEnabled(self, value):
-        pass
-
-
-class FakeIndicator(object):
-    def setPixmap(self, pixmap):
-        pass
-
-    def setToolTip(self, tooltip):
-        pass
-
-
-class FakeUi(object):
-    def __init__(self):
-        self.local_override_lineEdit = FakeTextWidget()
-        self.shot_request_button = FakeButton()
-        self.shot_abort_button = FakeButton()
-        self.shot_status = FakeTextWidget()
-        self.running_shot_name = FakeTextWidget()
-        self.runmanager_online = FakeIndicator()
-        self.runmanager_status_label = FakeIndicator()
-
-
-class FakeConfig(object):
-    def getfloat(self, section, option, fallback=None):
-        return fallback
-
-
 class FakeTab(object):
     """The master pseudoclock, for a shot with no devices in it."""
 
@@ -245,22 +190,12 @@ class FakeFrontPanelSettings(object):
         pass
 
 
-class FakeBLACS(object):
+class FakeBLACS(fixtures.FakeBLACS):
     """A BLACS with no device tabs, so a shot can run without hardware."""
-
-    exp_config = FakeConfig()
 
     def __init__(self, on_start_run):
         self.front_panel_settings = FakeFrontPanelSettings()
         self.tablist = {'pseudoclock': FakeTab(on_start_run)}
-
-
-class LoopbackExperimentServer(object):
-    """BLACS's own request handling, without binding a port."""
-
-    handler = ExperimentServer.handler
-    handle_get_status = ExperimentServer.handle_get_status
-    process = ExperimentServer.process
 
 
 class LoopbackBlacsStatusClient(runmanager.blacs_status.Client):
@@ -335,27 +270,15 @@ class IntegrationFixture(object):
             blacs.__main__.app = self.real_blacs_app
 
     def make_executor(self):
-        executor = ShotExecutor.__new__(ShotExecutor)
-        executor._ui = FakeUi()
-        executor.BLACS = FakeBLACS(self.on_start_run)
-        executor._logger = shot_execution.logging.getLogger('test.integration')
+        # The plain executor, then the few things this suite needs behind it.
+        executor = make_executor(
+            blacs=FakeBLACS(self.on_start_run), logger_name='test.integration'
+        )
         executor._manager_running = True
-        executor._requesting_shots = False
-        executor._pending_outcome = None
-        executor._current_shot_id = None
-        executor._next_rep_index = {}
         executor._runmanager_request_client = LoopbackRunmanagerClient(
             LoopbackRemoteServer(), on_new_pass=self.count_pass
         )
-        executor._runmanager_request_error_logged = False
-        executor.failure_reason = None
-        executor.local_error = None
-        executor.status_text = ''
-        executor.status_shot_filepath = None
-        executor.status_shot_id = None
-        executor.last_opened_shots_folder = ''
         executor.master_pseudoclock = 'pseudoclock'
-        executor._runmanager_online = ''
         executor.process_request = self.process_request
         return executor
 

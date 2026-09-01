@@ -4,7 +4,6 @@ ShotExecutor.__init__ starts the shot loop and wires up real Qt widgets,
 neither of which belongs in a unit test, so these build an executor without it
 and give it the small surface the methods under test actually use.
 """
-import logging
 import os
 import shutil
 import tempfile
@@ -14,47 +13,10 @@ import unittest
 
 import zprocess
 
+from fixtures import FakeBLACS, FakeUi, make_executor
+
 from blacs import shot_execution
 from blacs.shot_execution import ShotExecutor
-
-
-class FakeTextWidget(object):
-    def __init__(self):
-        self._text = ''
-
-    def text(self):
-        return self._text
-
-    def setText(self, value):
-        self._text = str(value)
-
-
-class FakeButton(object):
-    def __init__(self):
-        self._checked = False
-
-    def isChecked(self):
-        return self._checked
-
-    def setChecked(self, value):
-        self._checked = bool(value)
-
-
-class FakeUi(object):
-    def __init__(self):
-        self.local_override_lineEdit = FakeTextWidget()
-        self.shot_request_button = FakeButton()
-        self.shot_status = FakeTextWidget()
-        self.running_shot_name = FakeTextWidget()
-
-
-class FakeConfig(object):
-    def getfloat(self, section, option, fallback=None):
-        return fallback
-
-
-class FakeBLACS(object):
-    exp_config = FakeConfig()
 
 
 class FakeRunmanager(object):
@@ -74,23 +36,6 @@ class FakeRunmanager(object):
 
     def sent(self, method_name):
         return [args for name, args in self.calls if name == method_name]
-
-
-def make_executor():
-    executor = ShotExecutor.__new__(ShotExecutor)
-    executor._ui = FakeUi()
-    executor.BLACS = FakeBLACS()
-    executor._logger = logging.getLogger('test.shot_executor')
-    executor._requesting_shots = False
-    executor._pending_outcome = None
-    executor._current_shot_id = None
-    executor._next_rep_index = {}
-    executor.local_error = None
-    executor.status_text = ''
-    executor.status_shot_filepath = None
-    executor.status_shot_id = None
-    executor.last_opened_shots_folder = ''
-    return executor
 
 
 class StatusSnapshotTests(unittest.TestCase):

@@ -21,16 +21,11 @@ still fails on a runmanager regression.
 import ast
 import os
 import unittest
-import warnings
 
 import runmanager.remote
 
-with warnings.catch_warnings():
-    # See test_status_server: importing BLACS proper installs a warning logger
-    # that warns as it logs, so any warning raised while it is installed
-    # recurses until the stack runs out.
-    warnings.simplefilter('ignore')
-    from blacs.__main__ import ExperimentServer
+# fixtures does the guarded import of BLACS, once, for every test module.
+from fixtures import ExperimentServer
 
 from blacs import shot_execution
 

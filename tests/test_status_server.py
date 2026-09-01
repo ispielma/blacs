@@ -6,17 +6,10 @@ socket in its constructor, so the handler is called against a stand-in the way
 the runmanager tests call RunManager's own methods.
 """
 import unittest
-import warnings
 
-with warnings.catch_warnings():
-    # Importing BLACS proper installs labscript_utils.excepthook's warning
-    # logger, which logs through a deprecated call that warns in turn, so any
-    # warning raised while it is installed recurses until the stack runs out.
-    # Nothing here is interested in import-time warnings; catch_warnings puts
-    # the runner's own handler back afterwards.
-    warnings.simplefilter('ignore')
-    from blacs.__main__ import ExperimentServer
-    import blacs.__main__
+# fixtures does the guarded import of BLACS, once, for every test module.
+from fixtures import LoopbackExperimentServer
+import blacs.__main__
 
 
 class FakeShotExecutor(object):
@@ -34,14 +27,6 @@ class FakeBLACS(object):
         self.shot_executor = FakeShotExecutor(snapshot)
 
 
-class FakeExperimentServer(object):
-    """ExperimentServer's own request handling, without binding a port."""
-
-    handler = ExperimentServer.handler
-    handle_get_status = ExperimentServer.handle_get_status
-    process = ExperimentServer.process
-
-
 SNAPSHOT = {
     'requesting_shots': True,
     'status': 'Running (program time: 0.100s)...',
@@ -56,7 +41,7 @@ class StatusServerTests(unittest.TestCase):
         self.blacs = FakeBLACS(SNAPSHOT)
         self.real_app = getattr(blacs.__main__, 'app', None)
         blacs.__main__.app = self.blacs
-        self.server = FakeExperimentServer()
+        self.server = LoopbackExperimentServer()
 
     def tearDown(self):
         if self.real_app is None:
