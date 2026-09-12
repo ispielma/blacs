@@ -55,8 +55,30 @@ except Exception:
 PROVIDER_NONE = 'none'
 PROVIDER_PAUSED = 'paused'
 
+# How long to wait for runmanager to answer "are you there". This gates every
+# exchange, so it is not a background poll: the shot loop reaches it once per
+# shot, which means an unreachable runmanager costs this much between every
+# locally-run override shot, not merely between status updates.
+#
+# The two ways of getting it wrong are not symmetric. Too short and a
+# runmanager that is merely remote is judged absent, so BLACS silently stops
+# taking queued work while the apparatus quietly runs its own shots -- wrong,
+# and invisible to the operator, who sees only "runmanager unavailable". Too
+# long and an absent runmanager adds this to every shot cycle as dead time, on
+# an apparatus that is otherwise running perfectly well -- visible, and costing
+# time rather than data. So err long. A trivial round trip is well under a
+# millisecond on a LAN and a few hundred at worst across a campus VPN, which
+# leaves five seconds a wide margin; a site running short override shots
+# through an outage can lower it.
+#
+# Deliberately not derived from communication_timeout. That one allows
+# runmanager to choose and prepare a shot, which is work; this one measures a
+# network round trip. Tying them would make raising the allowance for a slow
+# compile silently slow down noticing that runmanager has gone.
+LIVENESS_TIMEOUT = 5
+
 # What the status says when BLACS holds no shot. Requesting and getting nothing
-# is not idleness -- BLACS is asking runmanager once a second -- and saying so
+# is not idleness -- BLACS is asking runmanager over and over -- and saying so
 # is the clearest sign an operator has that the Request shots button is in:
 REQUESTING = 'Requesting shots'
 NOT_REQUESTING = 'Not requesting shots'
@@ -361,6 +383,26 @@ class ShotExecutor(object):
             'path': response.get('path'),
         }, True
 
+    def runmanager_alive(self, timeout=None):
+        """Ask runmanager whether it is there, and say whether it answered.
+
+        This gates the exchange: a runmanager that does not answer is not asked
+        for a shot, so BLACS falls through to its local override rather than
+        waiting out the much longer allowance an exchange is given. That is the
+        whole point of asking separately, and why this has its own timeout."""
+        alive, _ = self.runmanager_rpc(
+            '_runmanager_request_client',
+            '_runmanager_request_error_logged',
+            'say_hello',
+            'Runmanager unavailable while checking status: %s',
+            timeout=self.BLACS.exp_config.getfloat(
+                'timeouts', 'liveness_timeout', fallback=LIVENESS_TIMEOUT
+            )
+            if timeout is None
+            else timeout,
+        )
+        return alive
+
     def process_request(self,h5_filepath):
         # check connection table
         try:
@@ -664,14 +706,7 @@ class ShotExecutor(object):
                 agnostic_path = None
                 runmanager_paused = False
                 runmanager_failed = False
-                alive, _ = self.runmanager_rpc(
-                    '_runmanager_request_client',
-                    '_runmanager_request_error_logged',
-                    'say_hello',
-                    'Runmanager unavailable while checking status: %s',
-                    timeout=1,
-                )
-                if alive:
+                if self.runmanager_alive():
                     # One exchange reports how the last shot turned out and
                     # asks for the next one. There is nothing to acknowledge:
                     # the row stays in runmanager's queue while we run it, so a

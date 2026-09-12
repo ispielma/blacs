@@ -313,6 +313,19 @@ local override shot BLACS cannot run still stops requests and records the
 reason, because retrying an unrunnable shot once a second is no answer either —
 but there is no runmanager row, so nothing is reported and no row turns red.
 
+How quickly BLACS decides runmanager "could not be reached" is a setting.
+Before each exchange it asks runmanager whether it is there and waits
+``liveness_timeout`` seconds for an answer — in the ``[timeouts]`` section of
+the labconfig, five by default. That question gates the exchange, so an
+unreachable runmanager costs the wait once per shot rather than once per status
+update: with a local override running through an outage, it is added to every
+shot cycle. Lower it if that overhead matters more than tolerating a slow link;
+raise it if a merely remote runmanager is being reported as unavailable. It is
+deliberately not tied to ``communication_timeout``, which is the allowance for
+runmanager to choose and prepare a shot: that is work, this is a round trip, and
+sizing one from the other would make raising the allowance for a slow compile
+quietly slow down noticing that runmanager has gone.
+
 Executing a shot
 ----------------
 

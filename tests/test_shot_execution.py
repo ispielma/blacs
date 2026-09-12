@@ -30,9 +30,11 @@ class FakeRunmanager(object):
         self.response = response
         self.reached = reached
         self.calls = []
+        self.timeouts = []
 
     def __call__(self, client_attr, error_attr, method_name, unavailable, *args, **kwargs):
         self.calls.append((method_name, args))
+        self.timeouts.append((method_name, kwargs.get('timeout')))
         if method_name == 'queue_exchange' and not args[1]:
             # Runmanager offers nothing to an exchange that did not ask:
             return self.reached, {'state': 'none', 'shot_id': None, 'path': None}
@@ -40,6 +42,9 @@ class FakeRunmanager(object):
 
     def sent(self, method_name):
         return [args for name, args in self.calls if name == method_name]
+
+    def timeout_for(self, method_name):
+        return [timeout for name, timeout in self.timeouts if name == method_name][0]
 
 
 class StatusSnapshotTests(unittest.TestCase):
@@ -647,6 +652,77 @@ class ExchangeTests(unittest.TestCase):
         executor.exchange_with_runmanager(True)
         outcome, _ = runmanager.sent('queue_exchange')[0]
         self.assertIsNone(outcome, 'a local shot is not in runmanager\'s queue')
+
+
+class TimeoutConfig(object):
+    """A labconfig with whatever timeouts a test wants to set."""
+
+    def __init__(self, **values):
+        self.values = values
+
+    def getfloat(self, section, option, fallback=None):
+        return self.values.get(option, fallback)
+
+
+class LivenessProbeTests(unittest.TestCase):
+    """The probe that gates the exchange.
+
+    It asks whether anyone is there, which is a network round trip. The
+    exchange it gates allows runmanager to choose and prepare a shot, which is
+    work. Sizing the first from the second means raising the allowance for a
+    slow compile also makes BLACS slower to notice an absent runmanager, so
+    they are separate settings.
+    """
+
+    def test_the_probe_waits_long_enough_for_a_remote_runmanager(self):
+        executor = make_executor()
+        runmanager = FakeRunmanager(reached=True)
+        executor.runmanager_rpc = runmanager
+
+        executor.runmanager_alive()
+
+        timeout = runmanager.timeout_for('say_hello')
+        self.assertEqual(
+            timeout,
+            shot_execution.LIVENESS_TIMEOUT,
+            'the probe uses the named liveness timeout',
+        )
+        self.assertGreater(
+            timeout, 1, 'one second misjudges a remote runmanager as absent'
+        )
+
+    def test_the_probe_timeout_is_configurable(self):
+        blacs = FakeBLACS()
+        blacs.exp_config = TimeoutConfig(liveness_timeout=0.25)
+        executor = make_executor(blacs=blacs)
+        runmanager = FakeRunmanager(reached=True)
+        executor.runmanager_rpc = runmanager
+
+        executor.runmanager_alive()
+
+        self.assertEqual(runmanager.timeout_for('say_hello'), 0.25)
+
+    def test_the_probe_is_not_sized_from_the_communication_timeout(self):
+        blacs = FakeBLACS()
+        blacs.exp_config = TimeoutConfig(communication_timeout=600)
+        executor = make_executor(blacs=blacs)
+        runmanager = FakeRunmanager(reached=True)
+        executor.runmanager_rpc = runmanager
+
+        executor.runmanager_alive()
+
+        self.assertEqual(
+            runmanager.timeout_for('say_hello'),
+            shot_execution.LIVENESS_TIMEOUT,
+            'a long allowance for compiling must not slow down noticing an '
+            'absent runmanager',
+        )
+
+    def test_the_probe_says_whether_runmanager_answered(self):
+        for reached in (True, False):
+            executor = make_executor()
+            executor.runmanager_rpc = FakeRunmanager(reached=reached)
+            self.assertIs(executor.runmanager_alive(), reached)
 
 
 class ShotLoopFixture(object):
