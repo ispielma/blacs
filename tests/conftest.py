@@ -18,13 +18,9 @@ tkinter window for every unhandled exception, which during a test run means one
 window per failure. Exceptions are still logged and still reach stderr, so
 nothing is hidden from the person running the tests.
 
-Both use ``setdefault``, so a value already in the environment wins:
+Both use ``setdefault``, so a value already in the environment wins.
 ``LABSCRIPT_NO_ERROR_DIALOG=0`` leaves the dialog on, as do ``false``, ``no``,
-``off`` and an empty value. That has not always been true -- until
-labscript-utils ``ae73495`` ("Let LABSCRIPT_NO_ERROR_DIALOG=0 mean what it
-looks like") the variable was read as a bare truth test, so ``0`` suppressed
-the dialog exactly as ``1`` did. A comment elsewhere still
-describing that is stale rather than a behaviour someone has found.
+``off``, an empty value and leaving it unset; anything else suppresses it.
 
 A test of the error dialog itself is the one reason to want it on, and there is
 none here. Such a test should assign ``excepthook.NO_ERROR_DIALOG`` directly
