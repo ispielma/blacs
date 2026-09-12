@@ -16,20 +16,78 @@ The two callers do not need the same executor, so this builds the plain one and
 returns it for the caller to add to. What it must not do is leave a field out.
 """
 import logging
+import sys
 import threading
 import types
 import warnings
 
-with warnings.catch_warnings():
-    # Importing BLACS proper installs labscript_utils.excepthook's warning
-    # logger, which logs through a deprecated call that warns in turn, so any
-    # warning raised while it is installed recurses until the stack runs out.
-    # Nothing here is interested in import-time warnings, and catch_warnings
-    # puts the runner's own handler back afterwards. Done once, here, so that
-    # every module importing BLACS need not repeat it.
-    warnings.simplefilter('ignore')
-    import blacs.__main__
-    from blacs.__main__ import ExperimentServer
+
+class _SilentSplash(object):
+    """A splash screen that is never built and never shown.
+
+    ``blacs/__main__.py`` builds a ``Splash`` and calls ``show()`` at module
+    scope, and only hides it under ``if __name__ == '__main__'``. So merely
+    importing the module puts the startup banner on the screen of whoever is
+    running the tests and leaves it there, because nothing in a test run
+    reaches the line that takes it down.
+
+    Standing in for the splash module before the import is what avoids that,
+    and it avoids it completely: ``Splash.__init__`` is also what creates the
+    ``QApplication``, so with this in place the import creates no Qt
+    application at all rather than a hidden one. Tests that need a real
+    QApplication build their own -- see ``test_main_window_layout.py``, which
+    must also ``show()`` its window, because Qt does not lay out a widget that
+    was never shown.
+    """
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def show(self):
+        pass
+
+    def hide(self):
+        pass
+
+    def update_text(self, *args, **kwargs):
+        pass
+
+
+def _import_blacs_without_starting_it():
+    """Import ``blacs.__main__`` for the real classes the tests borrow.
+
+    The tests exercise BLACS's own methods rather than descriptions of them,
+    which means importing the module that defines them. Importing it must not
+    start the application, so the splash module is stood in for over the
+    import and put back afterwards, leaving ``sys.modules`` as it was found.
+    """
+    fake_splash = types.ModuleType('labscript_utils.splash')
+    fake_splash.Splash = _SilentSplash
+    fake_splash.get_qapplication = lambda *args, **kwargs: None
+
+    saved = sys.modules.get('labscript_utils.splash')
+    sys.modules['labscript_utils.splash'] = fake_splash
+    try:
+        with warnings.catch_warnings():
+            # Importing BLACS proper installs labscript_utils.excepthook's
+            # warning logger, which logs through a deprecated call that warns
+            # in turn, so any warning raised while it is installed recurses
+            # until the stack runs out. Nothing here is interested in
+            # import-time warnings, and catch_warnings puts the runner's own
+            # handler back afterwards. Done once, here, so that every module
+            # importing BLACS need not repeat it.
+            warnings.simplefilter('ignore')
+            import blacs.__main__
+        return blacs.__main__
+    finally:
+        if saved is None:
+            del sys.modules['labscript_utils.splash']
+        else:
+            sys.modules['labscript_utils.splash'] = saved
+
+
+blacs_main = _import_blacs_without_starting_it()
+ExperimentServer = blacs_main.ExperimentServer
 
 from blacs.shot_execution import PublishedStatus, ShotExecutor
 
