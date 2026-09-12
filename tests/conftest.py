@@ -18,15 +18,23 @@ tkinter window for every unhandled exception, which during a test run means one
 window per failure. Exceptions are still logged and still reach stderr, so
 nothing is hidden from the person running the tests.
 
-Both use ``setdefault``, so a value already in the environment wins. Note that
-for the dialog that means *unsetting* the variable, or setting it empty:
-``excepthook`` reads it as ``bool(os.environ.get(...))``, so any non-empty
-value -- ``'0'`` included -- suppresses the dialog. A test of the error dialog
-itself would be the one reason to want it back, and there is no such test here.
+Both use ``setdefault``, so a value already in the environment wins:
+``LABSCRIPT_NO_ERROR_DIALOG=0`` leaves the dialog on, as do ``false``, ``no``,
+``off`` and an empty value. That has not always been true -- until
+labscript-utils ``8719676`` the variable was read as a bare truth test, so
+``0`` suppressed the dialog exactly as ``1`` did. A comment elsewhere still
+describing that is stale rather than a behaviour someone has found.
 
-``QT_QPA_PLATFORM`` must be set before qtutils imports Qt, and
-``LABSCRIPT_NO_ERROR_DIALOG`` before ``labscript_utils.excepthook`` is imported,
-which is why this is a conftest rather than a fixture.
+A test of the error dialog itself is the one reason to want it on, and there is
+none here. Such a test should assign ``excepthook.NO_ERROR_DIALOG`` directly
+rather than set the variable: the environment is consulted once, when
+``labscript_utils.excepthook`` is imported, and only the module attribute is
+read at the point of use.
+
+That is also why this is a conftest rather than a fixture. Both variables have
+to be set before the module that reads them is imported -- ``QT_QPA_PLATFORM``
+before qtutils imports Qt, ``LABSCRIPT_NO_ERROR_DIALOG`` before excepthook --
+and pytest imports conftest before the test modules that pull either in.
 """
 import os
 
