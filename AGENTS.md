@@ -56,8 +56,9 @@ spawn a tkinter window per unhandled exception — exceptions are still logged a
 still reach stderr. Both use `setdefault`, so a value already in the environment
 wins — `LABSCRIPT_NO_ERROR_DIALOG=0` leaves the dialog on, as do `false`, `no`,
 `off` and an empty value. That has not always been true: until labscript-utils
-`ae73495` the variable was read as a bare truth test, so `0` suppressed the
-dialog exactly as `1` did. A comment elsewhere still describing that is stale.
+`ae73495` ("Let LABSCRIPT_NO_ERROR_DIALOG=0 mean what it looks like") the
+variable was read as a bare truth test, so `0` suppressed the dialog exactly as
+`1` did. A comment elsewhere still describing that is stale.
 A test that wants the dialog should assign `excepthook.NO_ERROR_DIALOG`
 directly, since the environment is only consulted when that module is
 imported.
