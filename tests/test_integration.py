@@ -20,7 +20,6 @@ table check and the device tabs, which ``process_request`` and a tabless
 import os
 import shutil
 import tempfile
-import threading
 import types
 import unittest
 
@@ -107,7 +106,6 @@ class RunmanagerApp(object):
             lambda labscript_file, path: True,
             lambda path: None,
             self.output_box.output,
-            threading.Event(),
             lambda enabled: None,
         )
         self.analysis_submission = FakeAnalysisSubmission()
