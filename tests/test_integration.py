@@ -93,6 +93,11 @@ class RunmanagerApp(object):
     and the queue underneath is a real QueueManager, so the rules applied here
     are runmanager's. Only producing a default shot -- which evaluates globals
     and compiles a labscript file -- and submitting to lyse are stood in for.
+
+    Borrowing those methods means supplying every attribute they reach for,
+    and not only the ones the shots in this file make them reach: a name
+    missing here surfaces as an AttributeError from inside runmanager's code,
+    a long way from the test that provoked it.
     """
 
     queue_exchange = RunManager.queue_exchange
@@ -111,6 +116,11 @@ class RunmanagerApp(object):
         self.analysis_submission = FakeAnalysisSubmission()
         self.default_shot_files = []
         self.default_shots_taken = 0
+        # offer_shot hands this to compile_next_in_background, which reads it
+        # only when a compile is actually started.
+        self.ui = types.SimpleNamespace(
+            checkBox_view_shots=types.SimpleNamespace(isChecked=lambda: False)
+        )
 
     def take_default_shot(self, labscript_file):
         self.default_shots_taken += 1
