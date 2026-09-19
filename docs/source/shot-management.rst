@@ -70,6 +70,20 @@ report on a shot it re-ran under a fresh filename, and what lets runmanager
 offer the same row again after a failure without matching filenames. Enqueuing
 the same filepath again later makes a new row with a new identifier.
 
+**A shot file BLACS re-runs is a copy, and the copy is the same shot.** A
+shot file that already holds data is never run again in place: BLACS copies
+it to a fresh numbered ``_repXXXXX.h5``, without the data of the run already
+there, and runs the copy. Every root attribute the shot file carried crosses
+over untouched, ``shot_id`` among them, because it is the same shot — BLACS
+does not interpret those attributes and could put nothing in the place of one
+it dropped. What it writes itself is ``run repeat``, the number of the copy,
+and that is the field which tells the files of one shot apart. So a root
+attribute naming a shot names the shot and not the file: anything
+accumulating or averaging over results has to read the repeat number as well,
+or it counts one shot more than once. Returning a failed shot to its pre-run
+state makes the same kind of copy, over the original and under the repeat
+number it already had, because a run that failed is not another execution.
+
 **Only completion, or an explicit deletion, removes a row.** A shot that
 completed leaves the queue and is forwarded to lyse. Every other outcome —
 ``aborted``, ``failed`` or ``rejected`` — leaves the row exactly where it is,

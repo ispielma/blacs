@@ -459,6 +459,20 @@ class ShotExecutor(object):
         return next_path, index
         
     def clean_h5_file(self, h5file, new_h5_file, repeat_number=0):
+        """Write a copy of a shot file with no data from a run in it.
+
+        The copy is the same shot, ready to be run: the groups describing the
+        experiment are copied across, anything a run wrote is not, and every
+        root attribute crosses over untouched.
+
+        ``run repeat`` is the one BLACS writes, and the only root attribute it
+        has any opinion about: it numbers which execution of the shot this file
+        holds. The rest are carried rather than interpreted -- BLACS does not
+        know what they name, and could mint no replacement for one it left out,
+        so a copy missing one would describe the shot less fully than the file
+        that was submitted. An attribute naming a shot is therefore on every
+        file BLACS writes for that shot, and the repeat number is the field
+        that tells those files apart."""
         try:
             with h5py.File(h5file, 'r') as old_file:
                 with h5py.File(new_h5_file, 'w') as new_file:
@@ -494,7 +508,11 @@ class ShotExecutor(object):
         every caller is already handling a failure, and the shot file may be
         unreadable precisely because of it. Letting that raise would take the
         shot executor's thread down with it and stop BLACS running any further
-        shot, silently."""
+        shot, silently.
+
+        The file is rewritten in place and keeps the repeat number it already
+        had: a run that failed is not another execution of the shot, it is the
+        same one about to be attempted again."""
         try:
             with h5py.File(path, 'r') as h5_file:
                 repeat_number = h5_file.attrs.get('run repeat', 0)

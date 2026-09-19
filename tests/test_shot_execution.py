@@ -22,6 +22,10 @@ import blacs.__main__
 from blacs import shot_execution
 from blacs.shot_execution import ShotExecutor
 
+# After the imports above, never before them: labscript_utils.h5_lock has to
+# be imported before anything imports h5py, and BLACS is what imports it.
+import h5py
+
 
 class FakeRunmanager(object):
     """Stands in for ShotExecutor.runmanager_rpc, recording what was sent."""
@@ -971,6 +975,108 @@ class LocalFallbackTests(ShotLoopFixture, unittest.TestCase):
         self.assertEqual(len(set(paths)), 3, 'each repetition is its own file')
         self.assertNotIn(override, paths, 'and none of them is the override itself')
         self.assertEqual([number for _, number in repetitions], [1, 2, 3])
+
+
+class RerunShotFileTests(unittest.TestCase):
+    """What a copy of a shot file carries over, and what BLACS writes itself.
+
+    A shot file that already holds data is run by copying it first, so the run
+    writes into the copy and the data already there is left alone. The copy has
+    to be the same shot: it is the file the apparatus is about to execute, and a
+    shot described differently from the one that was submitted is a different
+    experiment. So every root attribute crosses over untouched, whatever it
+    says. BLACS does not interpret those attributes and mints none of its own;
+    it has no way to, not owning what they name.
+
+    ``run repeat`` is the one field BLACS does own and the only one it writes:
+    it counts which execution of the shot a file holds, and it is what tells two
+    files of one shot apart. An attribute naming the shot is therefore on every
+    file BLACS produces for it, and names none of them in particular.
+    """
+
+    def setUp(self):
+        self.executor = make_executor()
+        self.directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.directory, True)
+
+    def shot_file(self, name, **attrs):
+        """A shot file that has been run: root attributes, and data from a run."""
+        path = os.path.join(self.directory, name)
+        with h5py.File(path, 'w') as h5_file:
+            for attribute, value in attrs.items():
+                h5_file.attrs[attribute] = value
+            h5_file.create_group('globals')
+            h5_file.create_group('data')
+        return path
+
+    def test_a_rerun_copy_is_the_same_shot_without_the_previous_data(self):
+        original = self.shot_file(
+            'shot.h5', shot_id='shot-1', sequence_id='seq-1', **{'run number': 3}
+        )
+        copy = os.path.join(self.directory, 'shot_rep00001.h5')
+
+        self.assertTrue(self.executor.clean_h5_file(original, copy, repeat_number=1))
+
+        with h5py.File(copy, 'r') as h5_file:
+            attributes = dict(h5_file.attrs)
+            self.assertNotIn(
+                'data', h5_file, 'the copy is ready to be run, not already run'
+            )
+            self.assertIn('globals', h5_file, 'and is still the same experiment')
+        self.assertEqual(attributes['shot_id'], 'shot-1')
+        self.assertEqual(attributes['sequence_id'], 'seq-1')
+        self.assertEqual(attributes['run number'], 3)
+        self.assertEqual(attributes['run repeat'], 1, 'which execution this file is')
+
+    def test_repetitions_of_one_shot_differ_only_in_the_repeat_number(self):
+        # Two files, one shot. Every name the shot was given is on both of them,
+        # so no such name picks out a file; the repeat number is what a reader
+        # has to go by to tell one execution from the other.
+        original = self.shot_file('shot.h5', shot_id='shot-1', sequence_id='seq-1')
+        first = os.path.join(self.directory, 'shot_rep00001.h5')
+        second = os.path.join(self.directory, 'shot_rep00002.h5')
+
+        self.executor.clean_h5_file(original, first, repeat_number=1)
+        self.executor.clean_h5_file(original, second, repeat_number=2)
+
+        with h5py.File(first, 'r') as h5_file:
+            first_attributes = dict(h5_file.attrs)
+        with h5py.File(second, 'r') as h5_file:
+            second_attributes = dict(h5_file.attrs)
+
+        self.assertEqual(
+            {
+                attribute
+                for attribute in set(first_attributes) | set(second_attributes)
+                if first_attributes.get(attribute) != second_attributes.get(attribute)
+            },
+            {'run repeat'},
+            'the repeat number is the whole of the difference between them',
+        )
+        self.assertEqual(first_attributes['shot_id'], 'shot-1')
+        self.assertEqual(second_attributes['shot_id'], 'shot-1')
+
+    def test_a_failed_shot_is_reset_for_another_go_at_the_same_run(self):
+        # A shot that failed is put back as it was, in place and under its own
+        # name, so it can be run again. It is the same execution being attempted
+        # again, so its repeat number stands and everything naming the shot stays
+        # exactly where it is -- a file BLACS is about to run must say which shot
+        # it is as fully as it did when it arrived.
+        path = self.shot_file(
+            'shot_rep00002.h5', shot_id='shot-1', **{'run repeat': 2}
+        )
+
+        self.executor.reset_failed_shot_file(path)
+
+        with h5py.File(path, 'r') as h5_file:
+            attributes = dict(h5_file.attrs)
+            self.assertNotIn(
+                'data', h5_file, 'the failed run leaves nothing behind to trip on'
+            )
+        self.assertEqual(attributes['shot_id'], 'shot-1')
+        self.assertEqual(
+            attributes['run repeat'], 2, 'a run that failed is not another repeat'
+        )
 
 
 def failing_manage():
