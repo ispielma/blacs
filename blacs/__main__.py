@@ -143,7 +143,10 @@ class BLACSWindow(QMainWindow):
 
     def changeEvent(self, event):
         
-        if (event.type() == QEvent.Type.ApplicationPaletteChange
+        # PaletteChange, not ApplicationPaletteChange -- QWidget.event()
+        # never routes the application-wide event to changeEvent, so a
+        # widget listening for it would never see a theme switch.
+        if (event.type() == QEvent.Type.PaletteChange
                 or event.type() == QEvent.Type.StyleChange):
 
             for widget in self.findChildren(QWidget):
