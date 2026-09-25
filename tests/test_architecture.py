@@ -112,12 +112,9 @@ class WhatBlacsAsksRunmanagerForTests(unittest.TestCase):
 
 class WhatBlacsWillAnswerTests(unittest.TestCase):
     def test_blacs_offers_runmanager_nothing_that_changes_it(self):
-        # ExperimentServer.handler dispatches whatever handle_<command> method
-        # it finds, so the inventory of those methods is the whole surface a
-        # remote runmanager can reach. The base's hello and one read-only
-        # question, and no more -- which is also what keeps the superseded
-        # handoff commands from coming back through this server, since they too
-        # would be handle_ methods.
+        # The base handler dispatches to any handle_<command> method, so this
+        # is all a remote runmanager can reach: hello and one read-only
+        # question. A superseded handoff command would appear in this list.
         offered = [name for name in dir(ExperimentServer) if name.startswith('handle_')]
         if offered != ['handle_get_status', 'handle_hello']:
             fail(

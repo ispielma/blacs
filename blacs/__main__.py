@@ -33,14 +33,13 @@ splash.update_text('importing standard library modules')
 import subprocess
 import sys
 import time
-import traceback
 from pathlib import Path
 import platform
 import importlib.metadata
 WINDOWS = platform.system() == 'Windows'
 
 # No splash update for Qt - the splash code has already imported it:
-from qtutils import inmain_decorator, inmain_later, inmain, inthread, UiLoader
+from qtutils import inmain_later, inmain, inthread, UiLoader
 import qtutils.icons  # import has side-effects we rely on
 from qtutils.qt.QtCore import QTimer, Qt, qVersion, QEvent
 from qtutils.qt.QtGui import QIcon, QColor, QPalette
@@ -629,27 +628,6 @@ experiment_server = None
 
 
 class ExperimentServer(ZMQServer):
-    def handler(self, request_data):
-        """Answer a request on BLACS's one server port.
-
-        A ``[command, args, kwargs]`` request is dispatched to ``handle_<cmd>``,
-        the same convention runmanager's own server uses, so that the two speak
-        one shape to each other. Anything else is still the bare filepath the
-        old direct-submission callers sent, and is still refused."""
-        if isinstance(request_data, (list, tuple)) and len(request_data) == 3:
-            cmd, args, kwargs = request_data
-            if cmd == 'hello':
-                return 'hello'
-            try:
-                return getattr(self, 'handle_' + cmd)(*args, **kwargs)
-            except Exception as e:
-                msg = traceback.format_exc()
-                msg = "BLACS server returned an exception:\n" + msg
-                return e.__class__(msg)
-        message = self.process(request_data)
-        logger.info('Request handler: %s ' % message.strip())
-        return message
-
     def handle_get_status(self):
         """Report what BLACS is doing, for a runmanager user who cannot see it.
 
@@ -658,11 +636,6 @@ class ExperimentServer(ZMQServer):
         stay with the operator standing at this apparatus. Not decorated to run
         on the GUI thread, so that a BLACS busy with a shot still answers."""
         return app.shot_executor.get_status_snapshot()
-
-    @inmain_decorator(wait_for_return=True)
-    def process(self,h5_filepath):
-        logger.warning('Rejected direct shot submission: %s', h5_filepath)
-        return 'Error: BLACS no longer accepts direct shot submissions\n'
 
 
 if __name__ == '__main__':

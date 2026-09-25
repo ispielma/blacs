@@ -188,9 +188,10 @@ class LoopbackExperimentServer(object):
 
     The real server binds a socket in its constructor, so tests that want the
     handler call it against this instead. Borrowing the methods rather than
-    describing them is the point: what is exercised is BLACS's own dispatch.
+    describing them is the point: what is exercised is the server's real
+    dispatch.
     """
 
     handler = ExperimentServer.handler
+    handle_hello = ExperimentServer.handle_hello
     handle_get_status = ExperimentServer.handle_get_status
-    process = ExperimentServer.process

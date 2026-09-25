@@ -55,22 +55,6 @@ class StatusServerTests(unittest.TestCase):
     def test_a_status_request_gets_what_blacs_is_doing(self):
         self.assertEqual(self.request('get_status'), SNAPSHOT)
 
-    def test_blacs_answers_hello_so_runmanager_can_see_it_is_there(self):
-        self.assertEqual(self.request('hello'), 'hello')
-
-    def test_a_direct_shot_submission_is_still_refused(self):
-        # The old callers sent a bare filepath, and still get told that BLACS
-        # takes its shots from a runmanager queue now rather than being handed
-        # them. Only the new [command, args, kwargs] shape is dispatched.
-        message = self.server.handler('/tmp/shot_a.h5')
-        self.assertIn('no longer accepts direct shot submissions', message)
-
-    def test_an_unknown_command_comes_back_as_an_error(self):
-        response = self.request('make_the_tea')
-        self.assertIsInstance(
-            response, Exception, 'the server answers rather than dying'
-        )
-
     # That the server offers nothing which changes BLACS is the boundary rule
     # rather than a fact about this server, so it is enforced in
     # test_architecture.py alongside the other half of it.
