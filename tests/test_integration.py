@@ -29,7 +29,7 @@ from qtutils.qt.QtWidgets import QApplication
 
 import fixtures
 import runmanager.__main__
-from runmanager.__main__ import RemoteServer, RunManager
+from runmanager.__main__ import RunManager, RunmanagerServer
 from runmanager.blacs_status import (
     BlacsStatusMonitor,
     blacs_activity_display,
@@ -138,8 +138,9 @@ class RunmanagerApp(object):
 class LoopbackRemoteServer(object):
     """Runmanager's own request handling, without binding a port."""
 
-    handler = RemoteServer.handler
-    handle_queue_exchange = RemoteServer.handle_queue_exchange
+    handler = RunmanagerServer.handler
+    handle_hello = RunmanagerServer.handle_hello
+    handle_queue_exchange = RunmanagerServer.handle_queue_exchange
 
 
 class LoopbackRunmanagerClient(runmanager.remote.Client):
