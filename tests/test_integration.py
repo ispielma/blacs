@@ -111,7 +111,6 @@ class RunmanagerApp(object):
             lambda labscript_file, path: True,
             lambda path: None,
             self.output_box.output,
-            lambda enabled: None,
         )
         self.analysis_submission = FakeAnalysisSubmission()
         self.default_shot_files = []
