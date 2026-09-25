@@ -114,15 +114,16 @@ class WhatBlacsWillAnswerTests(unittest.TestCase):
     def test_blacs_offers_runmanager_nothing_that_changes_it(self):
         # ExperimentServer.handler dispatches whatever handle_<command> method
         # it finds, so the inventory of those methods is the whole surface a
-        # remote runmanager can reach. One read-only question, and no more --
-        # which is also what keeps the superseded handoff commands from coming
-        # back through this server, since they too would be handle_ methods.
+        # remote runmanager can reach. The base's hello and one read-only
+        # question, and no more -- which is also what keeps the superseded
+        # handoff commands from coming back through this server, since they too
+        # would be handle_ methods.
         offered = [name for name in dir(ExperimentServer) if name.startswith('handle_')]
-        if offered != ['handle_get_status']:
+        if offered != ['handle_get_status', 'handle_hello']:
             fail(
                 'BLACS\'s server now offers %s.' % ', '.join(offered),
-                'Only get_status may be served. Enabling Request shots, '
-                'clearing the error that stopped it, restarting a device and '
+                'Only hello and get_status may be served. Enabling Request '
+                'shots, clearing the error that stopped it, restarting a device and '
                 'aborting a shot belong to the operator standing at this '
                 'apparatus: a runmanager able to do any of them remotely would '
                 'take back the ownership boundary this branch drew, and a '
