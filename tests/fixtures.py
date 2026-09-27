@@ -87,7 +87,7 @@ def _import_blacs_without_starting_it():
 
 
 blacs_main = _import_blacs_without_starting_it()
-ExperimentServer = blacs_main.ExperimentServer
+BlacsServer = blacs_main.BlacsServer
 
 from blacs.shot_execution import PublishedStatus, ShotExecutor
 
@@ -192,6 +192,6 @@ class LoopbackExperimentServer(object):
     dispatch.
     """
 
-    handler = ExperimentServer.handler
-    handle_hello = ExperimentServer.handle_hello
-    handle_get_status = ExperimentServer.handle_get_status
+    handler = BlacsServer.handler
+    handle_hello = BlacsServer.handle_hello
+    handle_get_status = BlacsServer.handle_get_status

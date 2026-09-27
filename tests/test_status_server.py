@@ -1,6 +1,6 @@
 """Behavioural tests for the status BLACS serves to a remote runmanager.
 
-BLACS already had a server, so these exercise ExperimentServer's handler over
+BLACS already had a server, so these exercise BlacsServer's handler over
 the same surface a runmanager reaches it through. The server itself binds a
 socket in its constructor, so the handler is called against a stand-in the way
 the runmanager tests call RunManager's own methods.

@@ -627,7 +627,7 @@ class BLACS(LabscriptApplication):
 experiment_server = None
 
 
-class ExperimentServer(ZMQServer):
+class BlacsServer(ZMQServer):
     def handle_get_status(self):
         """Report what BLACS is doing, for a runmanager user who cannot see it.
 
@@ -700,7 +700,7 @@ if __name__ == '__main__':
     # load telling a runmanager that this BLACS had failed, rather than that it
     # was still starting.
     splash.update_text('starting experiment server')
-    experiment_server = ExperimentServer(port)
+    experiment_server = BlacsServer(port)
 
     splash.hide()
 
