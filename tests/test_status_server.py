@@ -79,12 +79,12 @@ class CloseBeforeTheServerExistsTests(unittest.TestCase):
 
     def test_the_server_name_exists_before_the_server_does(self):
         self.assertIn(
-            'experiment_server',
+            'blacs_server',
             vars(blacs.__main__),
             'the close handler reads this as a module global, so it has to '
             'resolve from the moment a window exists to be closed',
         )
         self.assertIsNone(
-            blacs.__main__.experiment_server,
+            blacs.__main__.blacs_server,
             'and it says there is no server yet rather than being absent',
         )
