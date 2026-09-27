@@ -659,6 +659,18 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
         )
         self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
 
+    def test_a_blacs_that_comes_back_is_shown_as_back(self):
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
+
+        port = self.blacs_server.port
+        self.blacs_server.shutdown()
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'offline')
+
+        # A restarted BLACS serves on the port runmanager is configured with.
+        self.blacs_server = BlacsServer(port=port, bind_address='tcp://127.0.0.1')
+        self.addCleanup(self.blacs_server.shutdown)
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
+
     def test_the_status_pull_carries_the_reason_blacs_stopped(self):
         shot = self.make_shot_file('shot_a.h5')
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
