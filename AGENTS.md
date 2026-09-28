@@ -22,7 +22,7 @@ preference:
    `tests/test_plugins_compat.py` is the worked example — it exercises the real
    `blacs/plugins/__init__.py` without importing the `blacs` package at all.
 3. **If a test must borrow from `__main__`** — to exercise a real method such
-   as `ExperimentServer.handler` or `BLACS.finalise_quit` rather than a
+   as `BlacsServer.handle_get_status` or `BLACS.finalise_quit` rather than a
    description of it — stub `labscript_utils.splash` in `sys.modules` *before*
    the import. A fake `Splash` whose `__init__`, `show`, `hide` and
    `update_text` do nothing, plus a `get_qapplication` returning `None`, is

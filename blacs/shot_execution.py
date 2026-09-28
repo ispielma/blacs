@@ -42,18 +42,7 @@ from labscript_utils.shared_drive import path_to_agnostic, path_to_local
 from blacs.tab_base_classes import MODE_TRANSITION_TO_BUFFERED, MODE_BUFFERED
 import blacs.plugins as plugins
 
-try:
-    import runmanager.remote as runmanager_remote
-except Exception:
-    runmanager_remote = None
-
-# What an exchange says the runmanager at the other end did with our request.
-# Named here rather than imported because runmanager is optional above, and
-# these are wire values in any case. The two the loop tells apart: a runmanager
-# with nothing for us, and one whose queue its own user has paused. A paused
-# runmanager is not offering work; it is not telling us to stop.
-PROVIDER_NONE = 'none'
-PROVIDER_PAUSED = 'paused'
+from runmanager.client import PROVIDER_NONE, PROVIDER_PAUSED, RunmanagerClient
 
 # How long to wait for runmanager to answer "are you there". This gates every
 # exchange, so it is not a background poll: the shot loop reaches it once per
@@ -275,33 +264,30 @@ class ShotExecutor(object):
         method_name,
         unavailable_message,
         *args,
-        timeout=1,
+        client=None,
         update_status=True,
+        **kwargs,
     ):
         try:
             if update_status:
                 self.runmanager_online = 'checking'
-            if runmanager_remote is None:
-                raise RuntimeError('runmanager.remote is unavailable')
-            client = getattr(self, client_attr)
             if client is None:
-                client = runmanager_remote.Client(timeout=timeout)
-                setattr(self, client_attr, client)
-            elif client.timeout != timeout:
-                client.timeout = timeout
-            response = getattr(client, method_name)(*args)
+                client = getattr(self, client_attr)
+                if client is None:
+                    client = RunmanagerClient()
+                    setattr(self, client_attr, client)
+            response = getattr(client, method_name)(*args, **kwargs)
             if update_status:
                 self.failure_reason = None
                 self.runmanager_online = 'online'
             setattr(self, error_logged_attr, False)
             return True, response
         except Exception as exc:
-            setattr(self, client_attr, None)
             if update_status:
                 self.failure_reason = str(exc)
                 self.runmanager_online = 'offline'
             if update_status and not getattr(self, error_logged_attr):
-                self._logger.warning(unavailable_message, exc)
+                self._logger.warning(unavailable_message, exc, exc_info=exc)
                 setattr(self, error_logged_attr, True)
             return False, None
 
@@ -359,6 +345,8 @@ class ShotExecutor(object):
         reported as such rather than as paused: only runmanager saying it is
         paused makes it paused."""
         no_shot = {'state': PROVIDER_NONE, 'shot_id': None, 'path': None}
+        # A deadline other than the client's own needs a client built with it.
+        client = None if timeout is None else RunmanagerClient(timeout=timeout)
         reached, response = self.runmanager_rpc(
             '_runmanager_request_client',
             '_runmanager_request_error_logged',
@@ -366,11 +354,7 @@ class ShotExecutor(object):
             'Runmanager unavailable while exchanging shots: %s',
             self._pending_outcome,
             request_shot,
-            timeout=self.BLACS.exp_config.getfloat(
-                'timeouts', 'communication_timeout', fallback=60
-            )
-            if timeout is None
-            else timeout,
+            client=client,
         )
         if not reached:
             return no_shot, False

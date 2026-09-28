@@ -33,14 +33,13 @@ splash.update_text('importing standard library modules')
 import subprocess
 import sys
 import time
-import traceback
 from pathlib import Path
 import platform
 import importlib.metadata
 WINDOWS = platform.system() == 'Windows'
 
 # No splash update for Qt - the splash code has already imported it:
-from qtutils import inmain_decorator, inmain_later, inmain, inthread, UiLoader
+from qtutils import inmain_later, inmain, inthread, UiLoader
 import qtutils.icons  # import has side-effects we rely on
 from qtutils.qt.QtCore import QTimer, Qt, qVersion, QEvent
 from qtutils.qt.QtGui import QIcon, QColor, QPalette
@@ -135,11 +134,11 @@ class BLACSWindow(QMainWindow):
                 self.blacs.exiting = True
                 self.blacs.shot_executor.stop()
                 self.blacs.settings.close()
-                if experiment_server is not None:
+                if blacs_server is not None:
                     # None while BLACS is still starting. Raising here left
                     # exiting set with nothing able to clear it, so the window
                     # could never be closed afterwards.
-                    experiment_server.shutdown()
+                    blacs_server.shutdown()
                 plugins.manager.close_plugins()
 
                 inmain_later(self.blacs.on_save_exit)
@@ -625,31 +624,10 @@ class BLACS(LabscriptApplication):
 # Bound in the startup below, after BLACS itself. Declared here because the
 # close handler reads it as a global and can run before that: the main window
 # is shown partway through startup, which then goes on building device tabs.
-experiment_server = None
+blacs_server = None
 
 
-class ExperimentServer(ZMQServer):
-    def handler(self, request_data):
-        """Answer a request on BLACS's one server port.
-
-        A ``[command, args, kwargs]`` request is dispatched to ``handle_<cmd>``,
-        the same convention runmanager's own server uses, so that the two speak
-        one shape to each other. Anything else is still the bare filepath the
-        old direct-submission callers sent, and is still refused."""
-        if isinstance(request_data, (list, tuple)) and len(request_data) == 3:
-            cmd, args, kwargs = request_data
-            if cmd == 'hello':
-                return 'hello'
-            try:
-                return getattr(self, 'handle_' + cmd)(*args, **kwargs)
-            except Exception as e:
-                msg = traceback.format_exc()
-                msg = "BLACS server returned an exception:\n" + msg
-                return e.__class__(msg)
-        message = self.process(request_data)
-        logger.info('Request handler: %s ' % message.strip())
-        return message
-
+class BlacsServer(ZMQServer):
     def handle_get_status(self):
         """Report what BLACS is doing, for a runmanager user who cannot see it.
 
@@ -658,11 +636,6 @@ class ExperimentServer(ZMQServer):
         stay with the operator standing at this apparatus. Not decorated to run
         on the GUI thread, so that a BLACS busy with a shot still answers."""
         return app.shot_executor.get_status_snapshot()
-
-    @inmain_decorator(wait_for_return=True)
-    def process(self,h5_filepath):
-        logger.warning('Rejected direct shot submission: %s', h5_filepath)
-        return 'Error: BLACS no longer accepts direct shot submissions\n'
 
 
 if __name__ == '__main__':
@@ -727,7 +700,7 @@ if __name__ == '__main__':
     # load telling a runmanager that this BLACS had failed, rather than that it
     # was still starting.
     splash.update_text('starting experiment server')
-    experiment_server = ExperimentServer(port)
+    blacs_server = BlacsServer(port)
 
     splash.hide()
 

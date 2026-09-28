@@ -353,9 +353,8 @@ class RecordingTimer(object):
 class QuittingBLACS(object):
     """BLACS's own quit poll, with no tabs and no window.
 
-    finalise_quit is borrowed rather than described, for the reason
-    LoopbackExperimentServer borrows the request handler: what has to be
-    exercised is BLACS's own decision that it has finished quitting.
+    finalise_quit is borrowed rather than described: what has to be exercised
+    is BLACS's own decision that it has finished quitting.
     """
 
     finalise_quit = blacs.__main__.BLACS.finalise_quit

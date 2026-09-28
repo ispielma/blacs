@@ -1,52 +1,51 @@
 """The runmanager/BLACS shot exchange, with both real implementations talking.
 
-Each repository's own tests stand in for the other side: runmanager's exchange
-tests answer a fake BLACS, and BLACS's shot-loop tests answer a fake
-runmanager. Neither can catch the two halves drifting apart, because each
-describes the other rather than running it. blacs depends on runmanager -- the
-dependency runs that way and only that way -- so this is the one place both
-implementations can be put in one process and made to talk.
-
-The seam is the ZMQ socket, and only that. ``ZMQClient.get`` is replaced with a
-direct call into the other side's request handler, so both clients pack their
-own requests, both servers dispatch them, and everything above that is real:
-``RunManager.queue_exchange``/``apply_shot_outcome``/``offer_shot`` over a real
-``QueueManager``, and ``ShotExecutor``'s real shot loop and exchange. What is
-therefore not covered here is the transport itself -- sockets, serialisation,
-timeouts and the two servers' own loops -- and the apparatus: the connection
-table check and the device tabs, which ``process_request`` and a tabless
-``BLACS`` stand in for so that a whole shot can happen without hardware.
+Each repository's own tests stand in for the other side, so neither can catch
+the two halves drifting apart. Here both run in one process: a real
+``RunmanagerServer`` and ``BlacsServer`` on free local ports, reached by the
+real ``RunmanagerClient`` and ``BlacsClient``, over ``RunManager``'s real
+exchange methods and ``QueueManager`` and ``ShotExecutor``'s real shot loop.
+What is faked is what cannot run in a test: runmanager's startup, whose
+exchange methods are borrowed onto a plain object, and the apparatus -- the
+connection table check and the device tabs, which ``process_request`` and a
+tabless ``BLACS`` stand in for so that a whole shot can happen without hardware.
 """
 import os
 import shutil
 import tempfile
+import time
 import types
 import unittest
 
 import labscript_utils.h5_lock  # must precede h5py, as it does in BLACS itself
 import h5py
 from qtutils.qt.QtWidgets import QApplication
+from labscript_utils.ls_zprocess import ZMQServer
 
 import fixtures
 import runmanager.__main__
-from runmanager.__main__ import RemoteServer, RunManager
+from runmanager.__main__ import RunManager, RunmanagerServer
 from runmanager.blacs_status import (
+    POLL_TIMEOUT,
     BlacsStatusMonitor,
     blacs_activity_display,
     blacs_link_display,
 )
+from runmanager.client import RunmanagerClient
 from runmanager.queueing import EMPTY_QUEUE_DEFAULT_LABSCRIPT, QueueManager
-import runmanager.blacs_status
-import runmanager.remote
 
 # fixtures does the guarded import of BLACS; by the time this runs the module
 # is in sys.modules, so importing it again here costs nothing and warns nothing.
-from fixtures import FakeUi, LoopbackExperimentServer, make_executor
+from fixtures import BlacsServer, FakeUi, make_executor
 import blacs.__main__
+from blacs.client import BlacsClient
 
 from blacs import shot_execution
 from blacs.shot_execution import ShotExecutor
 
+
+# BLACS's own exchange client waits this long for runmanager's reply.
+REPLY_TIMEOUT = 1
 
 _qapplication = None
 
@@ -111,7 +110,6 @@ class RunmanagerApp(object):
             lambda labscript_file, path: True,
             lambda path: None,
             self.output_box.output,
-            lambda enabled: None,
         )
         self.analysis_submission = FakeAnalysisSubmission()
         self.default_shot_files = []
@@ -134,46 +132,6 @@ class RunmanagerApp(object):
 
     def rows(self):
         return self.queue_manager.controller.get_queue_display_items()
-
-
-class LoopbackRemoteServer(object):
-    """Runmanager's own request handling, without binding a port."""
-
-    handler = RemoteServer.handler
-    handle_queue_exchange = RemoteServer.handle_queue_exchange
-
-
-class LoopbackRunmanagerClient(runmanager.remote.Client):
-    """runmanager.remote.Client with the socket replaced by a direct call.
-
-    Everything above the socket is the real client: BLACS's exchange goes
-    through ``Client.queue_exchange``, which packs the request runmanager's
-    server unpacks.
-    """
-
-    def __init__(self, server, on_new_pass=None):
-        runmanager.remote.Client.__init__(self, host='localhost', port=0, timeout=1)
-        self.server = server
-        self.on_new_pass = on_new_pass
-        # How many exchange replies to lose on the way back to BLACS: the
-        # request reaches runmanager and changes its queue, and BLACS learns
-        # nothing of what came back.
-        self.replies_to_lose = 0
-        # ZMQClient gives each instance its own get(), so the socket is
-        # replaced here rather than overridden on the class:
-        self.get = self._loopback
-
-    def _loopback(self, port, host, data=None, timeout=None):
-        if data[0] == 'hello' and self.on_new_pass is not None:
-            # The shot loop checks that runmanager is there once, at the top of
-            # every pass in which it has no shot in hand, so this is where a
-            # test counts passes of the loop.
-            self.on_new_pass()
-        response = self.server.handler(data)
-        if data[0] == 'queue_exchange' and self.replies_to_lose:
-            self.replies_to_lose -= 1
-            return None
-        return response
 
 
 # --------------------------------------------------------------------- BLACS
@@ -206,20 +164,8 @@ class FakeBLACS(fixtures.FakeBLACS):
         self.tablist = {'pseudoclock': FakeTab(on_start_run)}
 
 
-class LoopbackBlacsStatusClient(runmanager.blacs_status.Client):
-    """runmanager's BLACS status client, with the socket replaced."""
-
-    def __init__(self, server):
-        runmanager.blacs_status.Client.__init__(self, host='localhost', port=0)
-        self.server = server
-        self.get = self._loopback
-
-    def _loopback(self, port, host, data=None, timeout=None):
-        return self.server.handler(data)
-
-
 class IntegrationFixture(object):
-    """One runmanager and one BLACS, wired to each other at the socket."""
+    """One runmanager and one BLACS, talking through their real servers."""
 
     def setUp(self):
         ensure_qapplication()
@@ -231,6 +177,10 @@ class IntegrationFixture(object):
         self.real_runmanager_app = getattr(runmanager.__main__, 'app', None)
         runmanager.__main__.app = self.runmanager
         self.addCleanup(self.restore_runmanager_app)
+        # Built without runmanager's __init__, which binds its configured port:
+        self.runmanager_server = RunmanagerServer.__new__(RunmanagerServer)
+        ZMQServer.__init__(self.runmanager_server, bind_address='tcp://127.0.0.1')
+        self.addCleanup(self.runmanager_server.shutdown)
 
         # What the apparatus does with each shot it is given, in the order the
         # shots reach it. 'completed' runs it through to the end; anything else
@@ -249,7 +199,11 @@ class IntegrationFixture(object):
         blacs.__main__.app = types.SimpleNamespace(shot_executor=self.executor)
         self.addCleanup(self.restore_blacs_app)
 
-        self.status_client = LoopbackBlacsStatusClient(LoopbackExperimentServer())
+        self.blacs_server = BlacsServer(bind_address='tcp://127.0.0.1')
+        self.addCleanup(self.blacs_server.shutdown)
+        self.status_client = BlacsClient(
+            host='127.0.0.1', port=self.blacs_server.port, timeout=POLL_TIMEOUT
+        )
         self.statuses = []
         self.monitor = BlacsStatusMonitor(
             self.statuses.append, client=self.status_client
@@ -283,9 +237,19 @@ class IntegrationFixture(object):
             blacs=FakeBLACS(self.on_start_run), logger_name='test.integration'
         )
         executor._manager_running = True
-        executor._runmanager_request_client = LoopbackRunmanagerClient(
-            LoopbackRemoteServer(), on_new_pass=self.count_pass
+        executor._runmanager_request_client = RunmanagerClient(
+            host='127.0.0.1', port=self.runmanager_server.port, timeout=REPLY_TIMEOUT
         )
+        real_alive = executor.runmanager_alive
+
+        def alive_and_counted(*args, **kwargs):
+            # The shot loop checks that runmanager is there once, at the top of
+            # every pass in which it has no shot in hand, so a pass is counted
+            # here, whether or not runmanager answers.
+            self.count_pass()
+            return real_alive(*args, **kwargs)
+
+        executor.runmanager_alive = alive_and_counted
         executor.master_pseudoclock = 'pseudoclock'
         executor.process_request = self.process_request
         return executor
@@ -366,6 +330,18 @@ class IntegrationFixture(object):
         self.executor._manager_running = True
         ShotExecutor._manage(self.executor)
 
+    def lose_next_reply(self):
+        """Let the next exchange reach runmanager and change its queue, and
+        answer only after BLACS has stopped waiting for it."""
+
+        def exchange_then_stall(*args, **kwargs):
+            del self.runmanager.queue_exchange
+            response = self.runmanager.queue_exchange(*args, **kwargs)
+            time.sleep(2 * REPLY_TIMEOUT)
+            return response
+
+        self.runmanager.queue_exchange = exchange_then_stall
+
 
 class SuccessfulShotTests(IntegrationFixture, unittest.TestCase):
     """The path a shot takes when everything works.
@@ -443,7 +419,7 @@ class LostReplyTests(IntegrationFixture, unittest.TestCase):
         shot = self.make_shot_file('shot_a.h5')
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
         offered_id = self.runmanager.queue_manager.export_state()['items'][0]['shot_id']
-        self.executor._runmanager_request_client.replies_to_lose = 1
+        self.lose_next_reply()
 
         self.executor.requesting_shots = True
         self.run_loop(passes=3)
@@ -681,6 +657,18 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
         self.assertEqual(
             blacs_link_display(self.while_running[0]['status'])[0], 'online'
         )
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
+
+    def test_a_blacs_that_comes_back_is_shown_as_back(self):
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
+
+        port = self.blacs_server.port
+        self.blacs_server.shutdown()
+        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'offline')
+
+        # A restarted BLACS serves on the port runmanager is configured with.
+        self.blacs_server = BlacsServer(port=port, bind_address='tcp://127.0.0.1')
+        self.addCleanup(self.blacs_server.shutdown)
         self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
 
     def test_the_status_pull_carries_the_reason_blacs_stopped(self):

@@ -1,15 +1,14 @@
 """Behavioural tests for the status BLACS serves to a remote runmanager.
 
-BLACS already had a server, so these exercise ExperimentServer's handler over
-the same surface a runmanager reaches it through. The server itself binds a
-socket in its constructor, so the handler is called against a stand-in the way
-the runmanager tests call RunManager's own methods.
+A real BlacsServer runs on a free port and is reached through BlacsClient, as
+runmanager's status poll reaches it.
 """
 import unittest
 
 # fixtures does the guarded import of BLACS, once, for every test module.
-from fixtures import LoopbackExperimentServer
+from fixtures import BlacsServer
 import blacs.__main__
+from blacs.client import BlacsClient
 
 
 class FakeShotExecutor(object):
@@ -41,7 +40,9 @@ class StatusServerTests(unittest.TestCase):
         self.blacs = FakeBLACS(SNAPSHOT)
         self.real_app = getattr(blacs.__main__, 'app', None)
         blacs.__main__.app = self.blacs
-        self.server = LoopbackExperimentServer()
+        self.server = BlacsServer(bind_address='tcp://127.0.0.1')
+        self.addCleanup(self.server.shutdown)
+        self.client = BlacsClient(host='127.0.0.1', port=self.server.port, timeout=5)
 
     def tearDown(self):
         if self.real_app is None:
@@ -49,27 +50,8 @@ class StatusServerTests(unittest.TestCase):
         else:
             blacs.__main__.app = self.real_app
 
-    def request(self, command, *args, **kwargs):
-        return self.server.handler([command, args, kwargs])
-
     def test_a_status_request_gets_what_blacs_is_doing(self):
-        self.assertEqual(self.request('get_status'), SNAPSHOT)
-
-    def test_blacs_answers_hello_so_runmanager_can_see_it_is_there(self):
-        self.assertEqual(self.request('hello'), 'hello')
-
-    def test_a_direct_shot_submission_is_still_refused(self):
-        # The old callers sent a bare filepath, and still get told that BLACS
-        # takes its shots from a runmanager queue now rather than being handed
-        # them. Only the new [command, args, kwargs] shape is dispatched.
-        message = self.server.handler('/tmp/shot_a.h5')
-        self.assertIn('no longer accepts direct shot submissions', message)
-
-    def test_an_unknown_command_comes_back_as_an_error(self):
-        response = self.request('make_the_tea')
-        self.assertIsInstance(
-            response, Exception, 'the server answers rather than dying'
-        )
+        self.assertEqual(self.client.get_status(), SNAPSHOT)
 
     # That the server offers nothing which changes BLACS is the boundary rule
     # rather than a fact about this server, so it is enforced in
@@ -97,12 +79,12 @@ class CloseBeforeTheServerExistsTests(unittest.TestCase):
 
     def test_the_server_name_exists_before_the_server_does(self):
         self.assertIn(
-            'experiment_server',
+            'blacs_server',
             vars(blacs.__main__),
             'the close handler reads this as a module global, so it has to '
             'resolve from the moment a window exists to be closed',
         )
         self.assertIsNone(
-            blacs.__main__.experiment_server,
+            blacs.__main__.blacs_server,
             'and it says there is no server yet rather than being absent',
         )

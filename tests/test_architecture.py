@@ -1,14 +1,12 @@
 """BLACS's half of the guard on the runmanager/BLACS boundary.
 
-The same two rules the runmanager half enforces, from this side, plus the one
-check neither repository can make alone. They are about what the two
-applications may say to each other and nothing else: renaming a helper or
-moving a class must not fail a test in this file.
+The same two rules the runmanager half enforces, from this side, plus a
+comparison of what BLACS sends with what runmanager offers. They are about what
+the two applications may say to each other and nothing else: renaming a helper
+or moving a class must not fail a test in this file.
 
   1. BLACS asks runmanager for nothing but the one exchange -- and every
-     command it does ask for exists on runmanager's client. blacs depends on
-     runmanager, so this is the only place the two command surfaces can be
-     compared; runmanager cannot import blacs to do it from there.
+     command it does ask for exists on runmanager's client.
 
   2. BLACS answers runmanager's questions and takes no orders. The gate on
      hardware execution, the error that closed it, restarting a device and
@@ -22,10 +20,10 @@ import ast
 import os
 import unittest
 
-import runmanager.remote
+import runmanager.client
 
 # fixtures does the guarded import of BLACS, once, for every test module.
-from fixtures import ExperimentServer
+from fixtures import BlacsServer
 
 from blacs import shot_execution
 
@@ -91,12 +89,11 @@ class WhatBlacsAsksRunmanagerForTests(unittest.TestCase):
         # either side that is not made on the other shows up as BLACS asking
         # for something runmanager does not have.
         called = runmanager_methods_blacs_calls()
-        missing = sorted(
-            name for name in called if not hasattr(runmanager.remote.Client, name)
-        )
+        client = runmanager.client.RunmanagerClient
+        missing = sorted(name for name in called if not hasattr(client, name))
         if missing:
             fail(
-                'BLACS asks runmanager for %s, which runmanager.remote.Client '
+                'BLACS asks runmanager for %s, which RunmanagerClient '
                 'does not offer.' % ', '.join(missing),
                 'The two applications have drifted apart: at run time BLACS '
                 'would report runmanager as unavailable and fall back to its '
@@ -112,17 +109,15 @@ class WhatBlacsAsksRunmanagerForTests(unittest.TestCase):
 
 class WhatBlacsWillAnswerTests(unittest.TestCase):
     def test_blacs_offers_runmanager_nothing_that_changes_it(self):
-        # ExperimentServer.handler dispatches whatever handle_<command> method
-        # it finds, so the inventory of those methods is the whole surface a
-        # remote runmanager can reach. One read-only question, and no more --
-        # which is also what keeps the superseded handoff commands from coming
-        # back through this server, since they too would be handle_ methods.
-        offered = [name for name in dir(ExperimentServer) if name.startswith('handle_')]
-        if offered != ['handle_get_status']:
+        # The base handler dispatches to any handle_<command> method, so this
+        # is all a remote runmanager can reach: hello and one read-only
+        # question. A superseded handoff command would appear in this list.
+        offered = [name for name in dir(BlacsServer) if name.startswith('handle_')]
+        if offered != ['handle_get_status', 'handle_hello']:
             fail(
                 'BLACS\'s server now offers %s.' % ', '.join(offered),
-                'Only get_status may be served. Enabling Request shots, '
-                'clearing the error that stopped it, restarting a device and '
+                'Only hello and get_status may be served. Enabling Request '
+                'shots, clearing the error that stopped it, restarting a device and '
                 'aborting a shot belong to the operator standing at this '
                 'apparatus: a runmanager able to do any of them remotely would '
                 'take back the ownership boundary this branch drew, and a '

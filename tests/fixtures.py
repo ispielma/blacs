@@ -54,12 +54,14 @@ class _SilentSplash(object):
 
 
 def _import_blacs_without_starting_it():
-    """Import ``blacs.__main__`` for the real classes the tests borrow.
+    """Import ``blacs.__main__``, and ``runmanager.__main__``, for the real
+    classes the tests borrow.
 
-    The tests exercise BLACS's own methods rather than descriptions of them,
-    which means importing the module that defines them. Importing it must not
-    start the application, so the splash module is stood in for over the
-    import and put back afterwards, leaving ``sys.modules`` as it was found.
+    The tests exercise the applications' own methods rather than descriptions
+    of them, which means importing the modules that define them. Importing
+    either must not start its application, so the splash module is stood in
+    for over the imports and put back afterwards, leaving ``sys.modules`` as it
+    was found.
     """
     fake_splash = types.ModuleType('labscript_utils.splash')
     fake_splash.Splash = _SilentSplash
@@ -78,6 +80,7 @@ def _import_blacs_without_starting_it():
             # importing BLACS need not repeat it.
             warnings.simplefilter('ignore')
             import blacs.__main__
+            import runmanager.__main__
         return blacs.__main__
     finally:
         if saved is None:
@@ -87,7 +90,7 @@ def _import_blacs_without_starting_it():
 
 
 blacs_main = _import_blacs_without_starting_it()
-ExperimentServer = blacs_main.ExperimentServer
+BlacsServer = blacs_main.BlacsServer
 
 from blacs.shot_execution import PublishedStatus, ShotExecutor
 
@@ -181,16 +184,3 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     # loop running, and a test that wants one puts a started thread here.
     executor.manager = threading.Thread(target=lambda: None)
     return executor
-
-
-class LoopbackExperimentServer(object):
-    """BLACS's own request handling, without binding a port.
-
-    The real server binds a socket in its constructor, so tests that want the
-    handler call it against this instead. Borrowing the methods rather than
-    describing them is the point: what is exercised is BLACS's own dispatch.
-    """
-
-    handler = ExperimentServer.handler
-    handle_get_status = ExperimentServer.handle_get_status
-    process = ExperimentServer.process

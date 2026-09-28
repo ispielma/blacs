@@ -29,6 +29,7 @@ below instead of trying to preserve the old queue terminology.
 
 - `blacs/experiment_queue.py` -> `blacs/shot_execution.py`
 - `QueueManager` -> `ShotExecutor`
+- `ExperimentServer` -> `BlacsServer`
 
 ### `BLACS` object / plugin registry renames
 
@@ -98,32 +99,16 @@ Upstream queue startup logic now maps as follows:
 If upstream changes plugin setup or startup order near queue creation, merge
 those edits into the `shot_executor` path instead of recreating `self.queue`.
 
-#### `ExperimentServer.process(self, h5_filepath)`
+#### `BlacsServer`
 
-This changed semantically.
-
-Upstream behavior:
-
-- converted the agnostic path to local form
-- pushed the file into BLACS via `process_request()`
-
-Fork behavior:
-
-- direct remote shot submission is rejected
-- BLACS no longer accepts pushed shots from runmanager
-
-Current return is:
-
-- `'Error: BLACS no longer accepts direct shot submissions\\n'`
-
-If upstream changes the old submission handler, do not blindly merge that old
-push-based behavior back in.
-
-#### `ExperimentServer.handler(self, request_data)`
-
-`ExperimentServer` also answers a `[command, args, kwargs]` request now, the
-same shape runmanager's own server uses, dispatching to `handle_<cmd>`. A bare
-filepath still takes the `process()` rejection path above.
+Upstream's `ExperimentServer.process(self, h5_filepath)` converted the agnostic
+path to local form and pushed the file into BLACS via `process_request()`. The
+fork has no `process()` and no handler of its own: `BlacsServer` uses the
+`labscript_utils.ls_zprocess.ZMQServer` handler, which dispatches a
+`[command, args, kwargs]` request to `handle_<command>` and answers `hello`. A
+bare filepath is a malformed request and comes back as an exception, so BLACS
+accepts no pushed shots. If upstream changes the old submission handler, do not
+merge that push-based behavior back in.
 
 `handle_get_status` is the only command, and must stay the only one: it returns
 `ShotExecutor.get_status_snapshot()` so a runmanager user can see what this
@@ -153,10 +138,10 @@ Current flow is:
 1. if `Request shots` is unchecked and no outcome is still waiting to be
    reported, wait
 2. exchange with runmanager through
-   `runmanager.remote.Client.queue_exchange(outcome, request_shot)`: report how
-   the last shot turned out and ask for the next one in one message. The reply
-   carries a provider `state` (`shot`, `paused` or `none`), a stable `shot_id`
-   and an agnostic path
+   `runmanager.client.RunmanagerClient.queue_exchange(outcome, request_shot)`:
+   report how the last shot turned out and ask for the next one in one message.
+   The reply carries a provider `state` (`shot`, `paused` or `none`), a stable
+   `shot_id` and an agnostic path
 3. if runmanager offers nothing — paused, empty, unreachable, or a reply we
    could not read — use `local_override_lineEdit` if set
 4. convert the chosen agnostic path to local form
@@ -335,7 +320,8 @@ When pulling new upstream `master` changes into this fork:
    Port validation/rerun-copy fixes, but do not restore enqueue semantics by
    accident.
 
-5. Check whether upstream changed `ExperimentServer.process()`.
+5. Check whether upstream changed `ExperimentServer.process()`, which this fork
+   deletes.
    Do not restore direct shot submission unless the runmanager ownership model
    is intentionally being reverted.
 
@@ -356,6 +342,5 @@ These were intentionally removed from BLACS in this fork:
 - the superseded `queue_request_next` / `shot_accepted` / `shot_rejected` /
   `notify_shot_complete` shot-handoff calls, in either direction
 - a background thread that delivers or retries shot outcomes
-- any command on `ExperimentServer` that changes BLACS rather than reporting on
-  it
+- any command on `BlacsServer` that changes BLACS rather than reporting on it
 
