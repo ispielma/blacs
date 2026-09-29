@@ -36,7 +36,8 @@ class FakeRunmanager(object):
         self.calls = []
         self.timeouts = []
 
-    def __call__(self, client_attr, error_attr, method_name, unavailable, *args, **kwargs):
+    def __call__(self, method, unavailable, *args, **kwargs):
+        method_name = method.__name__
         self.calls.append((method_name, args))
         self.timeouts.append((method_name, kwargs.get('timeout')))
         if method_name == 'queue_exchange' and not args[1]:

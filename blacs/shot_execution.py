@@ -262,38 +262,24 @@ class ShotExecutor(object):
         self.last_opened_shots_folder = os.path.dirname(shot_file)
         self._ui.local_override_lineEdit.setText(shot_file)
 
-    def runmanager_rpc(
-        self,
-        client_attr,
-        error_logged_attr,
-        method_name,
-        unavailable_message,
-        *args,
-        client=None,
-        update_status=True,
-        **kwargs,
-    ):
+    def runmanager_rpc(self, method, unavailable_message, *args, client=None, **kwargs):
         try:
-            if update_status:
-                self.runmanager_online = 'checking'
+            self.runmanager_online = 'checking'
             if client is None:
-                client = getattr(self, client_attr)
-                if client is None:
-                    client = RunmanagerClient()
-                    setattr(self, client_attr, client)
-            response = getattr(client, method_name)(*args, **kwargs)
-            if update_status:
-                self.failure_reason = None
-                self.runmanager_online = 'online'
-            setattr(self, error_logged_attr, False)
+                if self._runmanager_request_client is None:
+                    self._runmanager_request_client = RunmanagerClient()
+                client = self._runmanager_request_client
+            response = method(client, *args, **kwargs)
+            self.failure_reason = None
+            self.runmanager_online = 'online'
+            self._runmanager_request_error_logged = False
             return True, response
         except Exception as exc:
-            if update_status:
-                self.failure_reason = str(exc)
-                self.runmanager_online = 'offline'
-            if update_status and not getattr(self, error_logged_attr):
+            self.failure_reason = str(exc)
+            self.runmanager_online = 'offline'
+            if not self._runmanager_request_error_logged:
                 self._logger.warning(unavailable_message, exc, exc_info=exc)
-                setattr(self, error_logged_attr, True)
+                self._runmanager_request_error_logged = True
             return False, None
 
     def report_shot_outcome(self, path, status, message=''):
@@ -353,9 +339,7 @@ class ShotExecutor(object):
         # A deadline other than the client's own needs a client built with it.
         client = None if timeout is None else RunmanagerClient(timeout=timeout)
         reached, response = self.runmanager_rpc(
-            '_runmanager_request_client',
-            '_runmanager_request_error_logged',
-            'queue_exchange',
+            RunmanagerClient.queue_exchange,
             'Runmanager unavailable while exchanging shots: %s',
             self._pending_outcome,
             request_shot,
@@ -380,9 +364,7 @@ class ShotExecutor(object):
         waiting out the much longer allowance an exchange is given. That is the
         whole point of asking separately, and why this has its own timeout."""
         alive, _ = self.runmanager_rpc(
-            '_runmanager_request_client',
-            '_runmanager_request_error_logged',
-            'say_hello',
+            RunmanagerClient.say_hello,
             'Runmanager unavailable while checking status: %s',
             timeout=self.BLACS.exp_config.getfloat(
                 'timeouts', 'liveness_timeout', fallback=LIVENESS_TIMEOUT
