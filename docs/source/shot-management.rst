@@ -313,9 +313,10 @@ directory for the day they were made.
 
 The **local override shot** is BLACS's own, selected in the BLACS GUI. BLACS
 runs it whenever an enabled **Request shots** produced no runmanager shot — the
-queue is paused, empty, or still compiling, or runmanager could not be reached
-or its reply could not be read. It belongs to no runmanager queue, so its
-completions are reported to nobody: they reach neither runmanager nor lyse,
+queue is paused or empty, or runmanager could not be reached or its reply could
+not be read — but not while the shot runmanager will offer next is still
+compiling, which BLACS waits for instead. It belongs to no runmanager queue, so
+its completions are reported to nobody: they reach neither runmanager nor lyse,
 which is what keeps repetitions of a shot nobody submitted out of the analysis.
 No queue row is created, changed or retired by one — though a runmanager can
 still see that BLACS is running one: the activity line beside **Pause queue**
@@ -346,9 +347,10 @@ Shot execution follows this pattern:
 
 #.  While **Request shots** is checked and BLACS is idle, it exchanges with
     runmanager: reporting the last shot's outcome if it is still holding one,
-    and asking for the next shot. If runmanager offers none — paused, empty,
-    compiling, or unreachable — and a local override shot has been selected in
-    the BLACS GUI, BLACS runs that instead.
+    and asking for the next shot. If runmanager offers none — paused, empty or
+    unreachable — and a local override shot has been selected in the BLACS
+    GUI, BLACS runs that instead. If its next shot is still compiling, BLACS
+    asks again a second later.
 #.  BLACS checks the shot's connection table against the lab connection table.
     A shot that fails this check is reported as ``rejected`` on the next
     exchange and **Request shots** is unchecked. Runmanager keeps the row, red,
