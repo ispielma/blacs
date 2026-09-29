@@ -32,7 +32,7 @@ from runmanager.blacs_status import (
     blacs_link_display,
 )
 from runmanager.client import RunmanagerClient
-from runmanager.queueing import EMPTY_QUEUE_DEFAULT_LABSCRIPT, QueueManager
+from runmanager.queueing import EMPTY_QUEUE_DEFAULT_LABSCRIPT, QueueController, QueueManager
 
 # fixtures does the guarded import of BLACS; by the time this runs the module
 # is in sys.modules, so importing it again here costs nothing and warns nothing.
@@ -105,8 +105,10 @@ class RunmanagerApp(object):
 
     def __init__(self):
         self.output_box = FakeOutputBox()
+        self.queue_controller = QueueController()
         self.queue_manager = QueueManager(
-            lambda item: None,
+            self.queue_controller,
+            lambda item, default_globals: None,
             lambda labscript_file, path: True,
             lambda path: None,
             self.output_box.output,
@@ -131,7 +133,7 @@ class RunmanagerApp(object):
         self.default_shot_files = []
 
     def rows(self):
-        return self.queue_manager.controller.get_queue_display_items()
+        return self.queue_controller.get_queue_display_items()
 
 
 # --------------------------------------------------------------------- BLACS
@@ -355,7 +357,7 @@ class SuccessfulShotTests(IntegrationFixture, unittest.TestCase):
         self.runmanager.queue_manager.enqueue(
             [{'path': first, 'compiled': True}, {'path': second, 'compiled': True}]
         )
-        shot_ids = [row['shot_id'] for row in self.runmanager.queue_manager.export_state()['items']]
+        shot_ids = [row['shot_id'] for row in self.runmanager.queue_controller.export_state()['items']]
 
         self.executor.requesting_shots = True
         self.run_loop(passes=3)
@@ -418,7 +420,7 @@ class LostReplyTests(IntegrationFixture, unittest.TestCase):
     def test_a_lost_offer_reply_costs_a_pass_and_not_the_shot(self):
         shot = self.make_shot_file('shot_a.h5')
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
-        offered_id = self.runmanager.queue_manager.export_state()['items'][0]['shot_id']
+        offered_id = self.runmanager.queue_controller.export_state()['items'][0]['shot_id']
         self.lose_next_reply()
 
         self.executor.requesting_shots = True
@@ -453,7 +455,7 @@ class FailureLatchTests(IntegrationFixture, unittest.TestCase):
         self.runmanager.queue_manager.enqueue(
             [{'path': shot, 'compiled': True}, {'path': later, 'compiled': True}]
         )
-        offered_id = self.runmanager.queue_manager.export_state()['items'][0]['shot_id']
+        offered_id = self.runmanager.queue_controller.export_state()['items'][0]['shot_id']
         self.abort_next_shot = True
 
         self.executor.requesting_shots = True
