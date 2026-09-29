@@ -42,7 +42,12 @@ from labscript_utils.shared_drive import path_to_agnostic, path_to_local
 from blacs.tab_base_classes import MODE_TRANSITION_TO_BUFFERED, MODE_BUFFERED
 import blacs.plugins as plugins
 
-from runmanager.client import PROVIDER_NONE, PROVIDER_PAUSED, RunmanagerClient
+from runmanager.client import (
+    PROVIDER_NONE,
+    PROVIDER_PAUSED,
+    PROVIDER_PENDING,
+    RunmanagerClient,
+)
 
 # How long to wait for runmanager to answer "are you there". This gates every
 # exchange, so it is not a background poll: the shot loop reaches it once per
@@ -707,6 +712,7 @@ class ShotExecutor(object):
                 shot_id = None
                 agnostic_path = None
                 runmanager_paused = False
+                runmanager_pending = False
                 runmanager_failed = False
                 if self.runmanager_alive():
                     # One exchange reports how the last shot turned out and
@@ -734,12 +740,15 @@ class ShotExecutor(object):
                     # queue, and say which it was so an operator can see why no
                     # queued work is arriving.
                     runmanager_paused = response['state'] == PROVIDER_PAUSED
+                    # Pending is the shot runmanager will offer next, still
+                    # compiling: wait for it rather than run ours in the gap.
+                    runmanager_pending = response['state'] == PROVIDER_PENDING
                     runmanager_failed = not reached
                 else:
                     runmanager_failed = True
                 self._current_shot_id = shot_id
 
-                if not agnostic_path and request_shot:
+                if not agnostic_path and request_shot and not runmanager_pending:
                     local_override_path = str(
                         inmain(self._ui.local_override_lineEdit.text)
                     ).strip()

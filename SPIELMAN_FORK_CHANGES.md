@@ -140,10 +140,11 @@ Current flow is:
 2. exchange with runmanager through
    `runmanager.client.RunmanagerClient.queue_exchange(outcome, request_shot)`:
    report how the last shot turned out and ask for the next one in one message.
-   The reply carries a provider `state` (`shot`, `paused` or `none`), a stable
-   `shot_id` and an agnostic path
+   The reply carries a provider `state` (`shot`, `paused`, `pending` or
+   `none`), a stable `shot_id` and an agnostic path
 3. if runmanager offers nothing — paused, empty, unreachable, or a reply we
-   could not read — use `local_override_lineEdit` if set
+   could not read — use `local_override_lineEdit` if set; if its next shot is
+   still compiling (`pending`), wait and go back to step 1
 4. convert the chosen agnostic path to local form
 5. validate/prepare it with `process_request()`
 6. execute it immediately

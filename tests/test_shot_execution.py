@@ -548,10 +548,9 @@ def offer(shot_id, path):
 
 
 NOTHING_OFFERED = (
-    # The four ways an exchange can come back without a shot: a runmanager
-    # whose queue its own user has paused, one with nothing queued -- or whose
-    # next shot is still compiling, which looks the same from here -- one we
-    # cannot reach at all, and one whose reply we could not make sense of.
+    # The four ways an exchange can come back with no shot to wait for: a
+    # runmanager whose queue its own user has paused, one with nothing queued,
+    # one we cannot reach at all, and one whose reply we could not make sense of.
     #
     # Each case gives what runmanager answered, whether we reached it, the
     # state the exchange reports for it, and what BLACS then says it is doing.
