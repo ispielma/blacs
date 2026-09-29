@@ -116,11 +116,6 @@ class RunmanagerApp(object):
         self.analysis_submission = FakeAnalysisSubmission()
         self.default_shot_files = []
         self.default_shots_taken = 0
-        # offer_shot hands this to compile_next_in_background, which reads it
-        # only when a compile is actually started.
-        self.ui = types.SimpleNamespace(
-            checkBox_view_shots=types.SimpleNamespace(isChecked=lambda: False)
-        )
 
     def take_default_shot(self, labscript_file):
         self.default_shots_taken += 1
