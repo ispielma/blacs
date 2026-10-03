@@ -20,9 +20,10 @@ selector, and an indicator showing whether runmanager is responding.
 The queue itself lives in runmanager, on its Queue tab, along with the settings
 governing how queued shots are compiled, whether the queue is paused, and what
 BLACS is given when the queue is empty. Queued shots are deleted there with the
-Delete or Backspace key or the row context menu, rather than with a button, and
-the queue is emptied as part of submitting a replacement batch. There is no
-reordering control and no repeat control: both belonged to the BLACS-owned
+Delete or Backspace key or the row context menu, rather than with a button.
+Replacement submissions clear waiting work while preserving every row already
+sent to BLACS. There is no reordering control and no repeat control: both
+belonged to the BLACS-owned
 queue and did not survive the move to runmanager. Anyone arriving from the
 upstream documentation will go looking for them.
 
@@ -84,11 +85,11 @@ or it counts one shot more than once. Returning a failed shot to its pre-run
 state makes the same kind of copy, over the original and under the repeat
 number it already had, because a run that failed is not another execution.
 
-**Only completion, or an explicit deletion, removes a row.** A shot that
-completed leaves the queue and is forwarded to lyse. Every other outcome —
-``aborted``, ``failed`` or ``rejected`` — leaves the row exactly where it is,
-at the head of the queue, turns it red, and records the reason BLACS gave in
-its tooltip. For ``aborted`` and ``failed`` the next request from BLACS is
+**Completion removes a row; deletion depends on whether BLACS is running it.**
+A shot that completed leaves the queue and is forwarded to lyse. Every other
+outcome — ``aborted``, ``failed`` or ``rejected`` — leaves the row, red, at the
+head of the queue and records the reason BLACS gave in its tooltip. After
+``aborted`` or ``failed``, the next request from BLACS is
 offered that same row, under the same identifier: retry is the default, and
 deleting the row is the only way to discard it. There is no Retry/Drop policy
 any more; the operator's choice is between asking for shots again and deleting
@@ -98,8 +99,8 @@ the row.
 BLACS could not read the shot at all — a file that has gone, a connection table
 that does not match the apparatus. Nothing about the apparatus is wrong and
 nothing about it will change by asking again, so runmanager holds that row and
-stops offering it, and **BLACS does not stop**: it keeps requesting, receives
-nothing, and runs its local override shot until the row is deleted or a
+stops offering it, and **BLACS does not stop requesting**: it keeps asking,
+receives nothing, and runs its local override shot until the row is deleted or a
 runmanager restart clears the state. Stopping BLACS for this would need
 somebody standing at the apparatus to start it again over a file only
 runmanager can put right, which a remote runmanager user cannot do. The one
@@ -132,13 +133,15 @@ would be given the row the first is still executing.
 **Repeating an exchange is safe, and errors are answered rather than raised.**
 BLACS lets go of an outcome only once runmanager has taken it, so a lost reply
 makes it send the same outcome again. A completion for a row that has already
-gone changes nothing and is not analysed twice; a failure for a row already
-carrying that same reason changes nothing and is not reported twice, and passes
-in silence because nothing happened. A completed shot matching no row is
-different, and is always reported: it is also what a row deleted while BLACS
-was running it looks like, and then a shot really did run and nothing will
-analyse it. Runmanager cannot tell the two apart, so it says what happened
-rather than dropping it. An outcome runmanager cannot read, and any failure on
+gone changes nothing in the queue, and lyse skips a file it already has; a
+failure for a row already carrying that same reason changes nothing and is not
+reported twice. This deduplication applies while that failed state remains;
+after the row is reoffered, another failure is a real outcome and must be
+processed. A completed shot matching no row is still passed to lyse: runmanager
+cannot tell a resent completion from a shot whose row went while BLACS ran it,
+as across a runmanager restart, so it passes the shot on rather than risk
+losing a real result, and says so in its output box. An outcome runmanager
+cannot read, and any failure on
 runmanager's side while it chooses what to offer, are likewise reported in its
 output box, and the exchange still answers normally.
 Raised, they would reach BLACS as an error indistinguishable from never having
@@ -149,10 +152,11 @@ delivered and resend it once a second indefinitely.
 agnostic paths; BLACS converts them to local paths before opening anything, and
 sends agnostic paths back in outcomes and in its status. Both sides must agree
 on the ``shared_drive`` prefix in their labconfig. If they disagree, the shot
-runmanager offers names a file BLACS cannot open, so BLACS rejects it, stops
+runmanager offers names a file BLACS cannot open, so BLACS rejects it, keeps
 requesting shots and says so, and the row goes red in runmanager with that
-reason — the same path any unusable shot takes. Nothing is lost, but nothing
-runs either until the labconfigs are put right.
+reason — the same path any unusable shot takes. That queued shot does not run;
+if configured, BLACS runs its local override shot while the path configuration
+is corrected.
 
 Four controls, four owners
 --------------------------
@@ -176,9 +180,12 @@ so enabling execution is always a deliberate act at this apparatus rather than
 something a restart resumes. Unchecking it stops the next request, not the shot
 in hand: a whole shot happens within one pass of the shot loop, so it finishes
 first. An outcome still waiting to be reported is not held back by it either,
-so runmanager always learns how the shot it offered turned out. Every outcome
-other than completion unchecks it and records why, and re-checking it is how an
-operator acknowledges that error and asks again — one action, deliberately
+so runmanager always learns how the shot it offered turned out. Aborted
+and failed outcomes uncheck it and record why. A rejected runmanager shot
+leaves it checked because the apparatus is sound; a rejected local override
+shot unchecks it because there is no runmanager row to hold the unreadable
+file. Re-checking after a latched outcome is how an operator acknowledges that
+error and asks again — one action, deliberately
 checking nothing first, because the per-device check made when the next shot is
 programmed is still the final authority and will stop requests again if the
 problem is still there.
@@ -195,8 +202,8 @@ says.
 **Abort** (BLACS) is the only way to interrupt a shot that is running. It
 belongs to the operator at the apparatus and nothing runmanager sends can reach
 it. Aborting reports the shot as ``aborted``, so its row goes red and is
-retried when requests are enabled again; like any other non-completed outcome
-it unchecks **Request shots**.
+retried when requests are enabled again; like a failed outcome it unchecks
+**Request shots**.
 
 The queue while a shot is running
 ---------------------------------
@@ -227,11 +234,11 @@ whatever the outcome was: the operator has said they do not want this shot, so a
 failure does not stay red to be retried, while a completed one is still reported
 onward — the cancel is about the queue, not about physics that already happened.
 
-Nothing removes a cancelled row sooner, and nothing can: a second Delete could
-not know the file was free any more than the first could. A BLACS that never
-comes back therefore leaves the row struck through and inert, which is honest —
-it is not running, it is not going to run, and nothing here can safely delete
-it. Ticking *Request shots* clears it.
+Another Delete cannot remove a cancelled row: it cannot prove the file is free
+any more than the first could. The next request with no outcome clears the row;
+an outcome arriving first clears it as described above. If BLACS never comes
+back, the row stays struck through and inert, because nothing here can safely
+delete its file. Ticking *Request shots* lets BLACS make that next request.
 
 Both *Empty queue, then add shots…* submission modes — which clear the queue
 before submitting the replacement batch — leave everything that has been sent to
@@ -249,15 +256,16 @@ own: a shot finishing removes a row while an operator has one selected, and a
 row number that meant one shot when the table was drawn can mean another by the
 time the key is pressed. Everything else they were asked to remove is
 removed, and runmanager writes one line in its output box saying why the
-running shot is still there. Waiting rows and red failed rows
-are deletable as normal — deleting a failed row is the only way to discard it,
-and doing so exposes the next waiting row without touching BLACS. A replacement
+running shot is still there. Waiting, failed and rejected rows are deletable as
+normal — deleting a failed row is the explicit way to discard it, and doing so
+exposes the next waiting row without touching BLACS. A replacement
 batch is numbered around the running shot rather than over it.
 
 A row can be left marked running when BLACS never came back to report on it —
-it was killed mid-shot, or the reply was lost. It cannot be deleted in that
-state, and it does not need to be: the next request from BLACS is offered that
-row again under the same identifier and the state clears itself. If BLACS stays
+it was killed mid-shot, or the reply was lost. Delete cancels that row and
+retains its file; the next request from BLACS clears it before offering later
+work. If it is not cancelled, the next request offers that row again under the
+same identifier. If BLACS stays
 unavailable, restarting runmanager clears it without losing the queue, because
 the running mark is never written to a saved configuration and every restored
 row comes back waiting; reloading the saved configuration does the same.
@@ -303,11 +311,13 @@ A **runmanager default shot** is produced by runmanager when its queue is empty
 and its *When queue is empty* setting asks for one, from the labscript file
 named in its *Default shot* field. It is a shot a runmanager user is running,
 so it is materialised as an ordinary queue row with its own stable identifier
-and follows every rule above: it is visible in the reserved row while it runs, goes red
-with its reason if it does not, is retried by the next request, can be deleted,
-and is removed and submitted to lyse when it completes. A failed default row
-holds back the next one, because a red row is the head of the queue and is what
-the next request is offered. Default rows are left out of a saved queue: their
+and follows every rule above: it is visible in the reserved row while it runs,
+goes red with its reason if it does not, is retried after an aborted or failed
+outcome, and is held after rejection until deleted or runmanager is restarted.
+It can be deleted and is removed and submitted to lyse when it completes. An
+aborted or failed default row holds back the next one, because it is the head
+of the queue and is what the next request is offered. Default rows are left
+out of a saved queue: their
 globals were read when they were produced, and their files live in the default
 directory for the day they were made.
 
@@ -353,11 +363,12 @@ Shot execution follows this pattern:
     asks again a second later.
 #.  BLACS checks the shot's connection table against the lab connection table.
     A shot that fails this check is reported as ``rejected`` on the next
-    exchange and **Request shots** is unchecked. Runmanager keeps the row, red,
-    at the head of the queue with that reason in its tooltip; once the
-    connection table is put right, re-checking **Request shots** offers the
-    same shot again. A rejected local override shot stops requests in the same
-    way but has no row to report against.
+    exchange and **Request shots** remains checked. Runmanager keeps the row,
+    red, at the head of the queue with that reason in its tooltip. It holds the
+    rejected row until it is deleted or runmanager is restarted; correcting
+    the connection table alone does not reoffer it. By contrast, a rejected
+    local override shot stops requests and has no runmanager row to report
+    against.
 #.  BLACS sends each device tab a message to program its device for
     hardware-timed execution, in the ``start_order`` groups the shot file
     declares. The messages are asynchronous, so every device in a group
